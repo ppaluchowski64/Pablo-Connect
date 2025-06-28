@@ -1,32 +1,154 @@
-# Prerequisites
-*.d
+# === OS-Specific Files ===
 
-# Compiled Object files
-*.slo
-*.lo
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.nfs*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Windows hidden files
+*.lnk
+
+# === CMake ===
+/build/
+/cmake-build-*/
+/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+CTestTestfile.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+Testing/
+CMakeUserPresets.json
+compile_commands.json
+
+# === Build Artifacts ===
 *.o
 *.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
+*.lo
 *.la
 *.a
 *.lib
-
-# Executables
+*.so
+*.so.*
+*.dylib
+*.dll
 *.exe
 *.out
 *.app
+*.run
+
+# === Debug & Logs ===
+*.log
+*.trace
+*.gch
+*.pch
+*.core
+core.*
+vgcore.*
+*.stackdump
+*.dmp
+*.bak
+
+# === Editors & IDEs ===
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# CLion (JetBrains)
+.idea/
+cmake-build-*/
+
+# Visual Studio
+*.VC.db
+*.VC.VC.opendb
+*.sdf
+*.opensdf
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.pdb
+*.idb
+*.ipch
+*.aps
+*.ncb
+*.tlog
+*.lastbuildstate
+*.cache
+*.ilk
+*.res
+*.iobj
+*.ipdb
+*.trg
+*.sln
+*.vcxproj*
+*.exe.recipe
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+
+# Xcode
+*.xcworkspace
+*.xcodeproj
+*.xcuserstate
+*.xcuserdata/
+
+# Qt Creator
+*.pro.user*
+*.qbs.user*
+*.autosave
+
+# Sublime
+*.sublime-*
+
+# === Package Managers ===
+
+# Conan
+.conan/
+
+# vcpkg
+vcpkg_installed/
+vcpkg_buildtrees/
+vcpkg_downloads/
+vcpkg_out/
+
+# CCache
+.ccache/
+
+# === Custom Folders ===
+/out/
+/bin/
+/lib/
+/dist/
+/deps/
+
+# === Misc ===
+*.tmp
+*.swp
+*.swo
+*.orig
+*#
+
+# === Test/coverage output ===
+/coverage/
+/test-output/
+/test-results/
+*.gcno
+*.gcda
+*.gcov
