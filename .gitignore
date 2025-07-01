@@ -152,3 +152,6 @@ vcpkg_out/
 *.gcno
 *.gcda
 *.gcov
+
+# Ignore CLion-generated Conan provider file
+**/conan_provider.cmake
