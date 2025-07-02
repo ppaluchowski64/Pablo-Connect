@@ -38,5 +38,10 @@ FetchContent_MakeAvailable(google-benchmark)
 FetchContent_MakeAvailable(debug-log)
 FetchContent_MakeAvailable(thread-safe-structs)
 
-add_executable(head_pconnect main.cpp)
-target_link_libraries(head_pconnect PRIVATE openssl::openssl asio::asio Debug-Log custom_containers)
+file(GLOB_RECURSE UTIL_SRC utilities/*)
+add_library(util_lib_pconnect STATIC ${UTIL_SRC})
+target_link_libraries(util_lib_pconnect PRIVATE openssl::openssl asio::asio Debug-Log custom_containers)
+target_include_directories(util_lib_pconnect PUBLIC utilities/inc/)
+
+add_executable(pawelek_test tests/pawelek_test.cpp)
+target_link_libraries(pawelek_test PRIVATE openssl::openssl asio::asio Debug-Log custom_containers util_lib_pconnect)
