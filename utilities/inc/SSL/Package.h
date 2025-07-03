@@ -52,12 +52,76 @@ public:
         return m_rawBody;
     }
 
+    template <StdLayoutOrVecOrString T0>
+    NO_DISCARD T0 GetValue() {
+
+        if constexpr (std::is_same_v<T0, std::string>) {
+            T0 element{};
+            PackageSizeInt stringSize;
+
+            if (m_readOffset + sizeof(PackageSizeInt) > m_header.size) {
+                Debug::LogError("m_readOffset out of body scope");
+                return element;
+            }
+
+            std::memcpy(&stringSize, m_rawBody + m_readOffset, sizeof(PackageSizeInt));
+            m_readOffset += sizeof(PackageSizeInt);
+
+            if (m_readOffset + stringSize > m_header.size) {
+                Debug::LogError("m_readOffset out of body scope");
+                return element;
+            }
+
+            element.resize(stringSize);
+            std::memcpy(element.data(), m_rawBody + m_readOffset, stringSize);
+            m_readOffset += stringSize;
+
+            return std::move(element);
+        } else if constexpr (is_std_layout_vector<T0>::value) {
+            T0 element{};
+            PackageSizeInt vectorSize;
+
+            if (m_readOffset + sizeof(PackageSizeInt) > m_header.size) {
+                Debug::LogError("m_readOffset out of body scope");
+                return element;
+            }
+
+            std::memcpy(&vectorSize, m_rawBody + m_readOffset, sizeof(PackageSizeInt));
+            m_readOffset += sizeof(PackageSizeInt);
+            PackageSizeInt dataSize = vectorSize * sizeof(typename T0::value_type);
+
+            if (m_readOffset + dataSize > m_header.size) {
+                Debug::LogError("m_readOffset out of body scope");
+                return element;
+            }
+
+            element.resize(vectorSize);
+            std::memcpy(element.data(), m_rawBody + m_readOffset, dataSize);
+            m_readOffset += dataSize;
+
+            return std::move(element);
+        } else {
+            const PackageSizeInt size = sizeof(T0);
+            T0 element{};
+
+            if (m_readOffset + size > m_header.size) {
+                Debug::LogError("m_readOffset out of body scope");
+                return element;
+            }
+
+            std::memcpy(&element, m_rawBody + m_readOffset, size);
+            m_readOffset += size;
+
+            return std::move(element);
+        }
+    }
+
     ~Package() {
         delete[] m_rawBody;
     }
 
     template <StdLayoutOrVecOrString... Args>
-    static Package CreateFromData(T type, const Args&... args) {
+    static Package Create(T type, const Args&... args) {
         PackageHeader header {
             static_cast<PackageTypeInt>(type),
             0
@@ -65,7 +129,7 @@ public:
         (CalculateElementSize(args, header), ...);
         Package newPackage(header);
         PackageSizeInt offset = 0;
-        ((InsertElementToBody(args, newPackage, offset)), ...);
+        (InsertElementToBody(args, newPackage, offset), ...);
 
         return newPackage;
     }
