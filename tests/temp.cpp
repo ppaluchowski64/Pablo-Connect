@@ -19,7 +19,22 @@ int main() {
     std::string ss = "Hello world!";
     std::vector<int> v = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 
-    Package<packType> package = Package<packType>::CreateFromData(packType::message, iv, fv, ss, v);
+    Package<packType> package = Package<packType>::Create(packType::message, iv, fv, ss, v);
+
+    int rv = package.GetValue<int>();
+    float rf = package.GetValue<float>();
+    std::string sf = package.GetValue<std::string>();
+    std::vector<int> v2 = package.GetValue<std::vector<int>>();
+    int rvd = package.GetValue<int>();
+
+    Debug::Log(std::to_string(rv) + " " + std::to_string(rf) + " " + sf);
+
+    std::string result = "";
+
+    for (const auto &v : v2) {
+        result += std::to_string(v) + " ";
+    }
+    Debug::Log(result);
 
     std::cin.get();
 }
