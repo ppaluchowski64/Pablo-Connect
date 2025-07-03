@@ -12,6 +12,8 @@ void CertificateManager::GenerateCertificate(const std::filesystem::path& path) 
     const std::string keyPath = (path / "privateKey.key").string();
     const std::string certPath = (path / "certificate.crt").string();
 
+    std::filesystem::create_directories(path);
+
     const unsigned char *C_value = reinterpret_cast<const unsigned char *>("PL");
     const unsigned char* O_value = reinterpret_cast<const unsigned char*>("PabloConnect");
     const unsigned char* CN_value = reinterpret_cast<const unsigned char*>("localhost");
@@ -70,19 +72,29 @@ void CertificateManager::GenerateCertificate(const std::filesystem::path& path) 
 }
 
 bool CertificateManager::IsCertificateValid(const std::filesystem::path &path) {
+    constexpr int certificateMinimalTimeLeft = 60 * 10;
+
     const std::string certPath = (path / "certificate.crt").string();
     FILE* fp = fopen(certPath.c_str(), "r");
     if (!fp) {
         return false;
     }
 
-    const X509* cert = PEM_read_X509(fp, nullptr, nullptr, nullptr);
+    X509* cert = PEM_read_X509(fp, nullptr, nullptr, nullptr);
     fclose(fp);
 
+    if (!cert) {
+        return false;
+    }
+
     time_t now = time(nullptr);
-    if (X509_cmp_time(X509_get_notBefore(cert), &now) > 0) return false;
-    if (X509_cmp_time(X509_get_notAfter(cert), &now) < 0) return false;
-    return true;
+    time_t future = now + certificateMinimalTimeLeft;
+
+    const bool valid = (X509_cmp_time(X509_get_notBefore(cert), &now) <= 0 &&
+                        X509_cmp_time(X509_get_notAfter(cert), &future) >= 0);
+
+    X509_free(cert);
+    return valid;
 }
 
 
