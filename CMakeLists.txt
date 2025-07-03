@@ -45,3 +45,6 @@ target_include_directories(util_lib_pconnect PUBLIC utilities/inc/)
 
 add_executable(pawelek_test tests/pawelek_test.cpp)
 target_link_libraries(pawelek_test PRIVATE openssl::openssl asio::asio Debug-Log custom_containers util_lib_pconnect)
+
+add_executable(temp_test tests/temp.cpp)
+target_link_libraries(temp_test PRIVATE openssl::openssl asio::asio Debug-Log custom_containers util_lib_pconnect)
