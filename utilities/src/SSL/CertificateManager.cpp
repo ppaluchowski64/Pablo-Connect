@@ -18,7 +18,6 @@ void CertificateManager::GenerateCertificate(const std::filesystem::path& path) 
     const unsigned char* O_value = reinterpret_cast<const unsigned char*>("PabloConnect");
     const unsigned char* CN_value = reinterpret_cast<const unsigned char*>("localhost");
     constexpr int exp  = 60 * 60 * 24 * 30;
-    constexpr int bits = 3072;
 
     EVP_PKEY* pkey = nullptr;
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr);
