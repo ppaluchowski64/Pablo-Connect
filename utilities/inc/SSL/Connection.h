@@ -3,8 +3,10 @@
 
 #include <asio.hpp>
 #include <asio/ssl.hpp>
+#include <utility>
 #include <TSDeque.h>
 #include <DebugLog.h>
+#include <asio/ssl/context_base.hpp>
 #include <SSL/Package.h>
 #include <SSL/CertificateManager.h>
 
@@ -14,6 +16,8 @@ typedef asio::ip::tcp::socket TCPSocket;
 typedef asio::ssl::stream<asio::ip::tcp::socket> SSLSocket;
 typedef asio::ip::tcp::endpoint Endpoint;
 typedef asio::ip::tcp::acceptor Acceptor;
+typedef asio::ssl::context::method SSLMethod;
+typedef asio::ssl::stream_base SSLStreamBase;
 
 template <PackageType T>
 class Connection;
@@ -29,13 +33,45 @@ class Connection final : public std::enable_shared_from_this<Connection<T>> {
 public:
     Connection() = delete;
 
-    static std::shared_ptr<Connection> Create(IOContext& iocontext, SSLContext& sslcontext, ts::deque<PackageIn<T>>& inDeque, Endpoint endpoint) {
-        std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(iocontext, sslcontext, inDeque);
-        connection->m_socket = TCPSocket(iocontext);
-        connection->m_connection = 1;
-        connection->Connect(endpoint);
+    static void Start(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque, Endpoint endpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
+        asio::async_connect(connection->m_sslSocket.lowest_layer(), std::initializer_list<Endpoint>({std::move(endpoint)}), [connection, callback](const asio::error_code& errorCode, const asio::ip::tcp::endpoint&) {
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+                return;
+            }
 
-        return connection;
+            connection->m_sllSocket->async_handshake(SSLStreamBase::client, [connection, callback](const asio::error_code& errorCode) {
+                if (errorCode) {
+                    Debug::LogError(errorCode.message());
+                    return;
+                }
+
+                Debug::Log("Accepted connection to " + connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string() + ":" + std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()));
+                connection->m_connection = s_currentConnectionID++;
+                callback(connection);
+            });
+        });
+    }
+
+    static void Seek(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque, Acceptor& acceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
+        acceptor.async_accept(connection->m_sslSocket.lowest_layer(), [connection, callback](const asio::error_code& errorCode) {
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+                return;
+            }
+
+            connection->m_sslSocket.async_handshake(SSLStreamBase::server, [connection, callback](const asio::error_code& errorCode) {
+                if (errorCode) {
+                    Debug::LogError(errorCode.message());
+                }
+
+                Debug::Log("Accepted connection from " + connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string() + ":" + std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()));
+                connection->m_connection = s_currentConnectionID++;
+                callback(connection);
+            });
+        });
     }
 
     void Send(std::unique_ptr<Package<T>>&& package) {
@@ -43,25 +79,14 @@ public:
     }
 
 private:
-    Connection(IOContext& iocontext, SSLContext& sslcontext, ts::deque<PackageIn<T>>& inDeque)
-    : m_context(iocontext), m_sslContext(sslcontext), m_inDeque(inDeque) { }
+    Connection(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque)
+    : m_context(ioContext), m_sslContext(sslContext), m_sslSocket(ioContext, sslContext), m_inDeque(inDeque) { }
 
-    void Connect(Endpoint endpoint) {
-        auto self = this->shared_from_this();
-        asio::async_connect(m_socket, std::initializer_list<Endpoint>({endpoint}), [self](const asio::error_code& errorCode, const asio::ip::tcp::endpoint& endpoint) {
-            Debug::LogError(errorCode.message());
-            return;
-        });
-
-        Debug::Log("Connected {" + m_socket.remote_endpoint().address().to_string() + ":" + std::to_string(m_socket.remote_endpoint().port()) + "}");
-        self->m_connection = s_currentConnectionID++;
-    }
 
     IOContext&  m_context;
     SSLContext& m_sslContext;
-    TCPSocket&  m_socket;
     SSLSocket   m_sslSocket;
-    uint16_t    m_connectionID;
+    uint16_t    m_connectionID{};
 
     ts::deque<std::unique_ptr<Package<T>>> m_outDeque;
     ts::deque<PackageIn<T>>&               m_inDeque;
