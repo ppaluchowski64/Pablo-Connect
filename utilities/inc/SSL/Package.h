@@ -143,7 +143,7 @@ public:
 
             std::memcpy(&vectorSize, m_rawBody + m_readOffset, sizeof(PackageSizeInt));
             m_readOffset += sizeof(PackageSizeInt);
-            PackageSizeInt dataSize = vectorSize * sizeof(typename T0::value_type);
+            const PackageSizeInt dataSize = vectorSize * sizeof(typename T0::value_type);
 
             if (m_readOffset + dataSize > m_header.size) {
                 Debug::LogError("m_readOffset out of body scope");
