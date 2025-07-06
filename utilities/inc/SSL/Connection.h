@@ -6,6 +6,7 @@
 #include <utility>
 #include <TSDeque.h>
 #include <DebugLog.h>
+#include <memory>
 #include <asio/ssl/context_base.hpp>
 #include <SSL/Package.h>
 #include <asio/buffer.hpp>
@@ -33,12 +34,31 @@ public:
 template <PackageType T>
 class Connection final : public std::enable_shared_from_this<Connection<T>> {
 public:
-    Connection(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque)
-    : m_context(ioContext), m_sslContext(sslContext), m_sslSocket(ioContext, sslContext), m_inDeque(inDeque) { }
+    Connection(IOContext& ioContext, const std::shared_ptr<SSLContext>& sslContext, ts::deque<PackageIn<T>>& inDeque)
+    : m_context(ioContext), m_sslContext(sslContext), m_sslSocket(ioContext, *sslContext), m_inDeque(inDeque) { }
 
     Connection() = delete;
 
-    static void Start(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque, Endpoint endpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+    static std::shared_ptr<SSLContext> CreateSSLContext(const std::string& certFile, const std::string& keyFile, const bool isServer) {
+        std::shared_ptr<SSLContext> ctx = std::make_shared<SSLContext>(isServer ? SSLContext::tlsv13_server : SSLContext::tlsv13_client);
+
+        ctx->set_options(
+            SSLContext::default_workarounds |
+            SSLContext::default_workarounds |
+            SSLContext::no_sslv2 |
+            SSLContext::no_sslv3 |
+            SSLContext::no_tlsv1 |
+            SSLContext::no_tlsv1_1
+        );
+
+        ctx->use_certificate_chain_file(certFile);
+        ctx->use_private_key_file(keyFile, SSLContext::pem);
+        ctx->set_verify_mode(asio::ssl::verify_none);
+
+        return ctx;
+    }
+
+    static void Start(IOContext& ioContext, std::shared_ptr<SSLContext> sslContext, ts::deque<PackageIn<T>>& inDeque, Endpoint endpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
         std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
 
         asio::async_connect(connection->m_sslSocket.lowest_layer(), std::initializer_list<Endpoint>({std::move(endpoint)}), [connection, callback](const asio::error_code& errorCode, const asio::ip::tcp::endpoint&) {
@@ -61,7 +81,7 @@ public:
         });
     }
 
-    static void Seek(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque, Acceptor& acceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+    static void Seek(IOContext& ioContext, std::shared_ptr<SSLContext> sslContext, ts::deque<PackageIn<T>>& inDeque, Acceptor& acceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
         std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
 
         acceptor.async_accept(connection->m_sslSocket.lowest_layer(), [connection, callback](const asio::error_code& errorCode) {
@@ -153,12 +173,11 @@ private:
         });
     }
 
-    IOContext&  m_context;
-    SSLContext& m_sslContext;
-    SSLSocket   m_sslSocket;
-    uint16_t    m_connectionID{};
-    bool        m_sending{false};
-
+    IOContext&                  m_context;
+    std::shared_ptr<SSLContext> m_sslContext;
+    SSLSocket                   m_sslSocket;
+    uint16_t                    m_connectionID{};
+    bool                        m_sending{false};
     std::unique_ptr<Package<T>> m_packageOut;
     std::unique_ptr<Package<T>> m_packageIn;
 
