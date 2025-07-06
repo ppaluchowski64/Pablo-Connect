@@ -41,15 +41,11 @@ public:
     static void Start(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque, Endpoint endpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
         std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
 
-        Debug::Log("Connection started");
-
         asio::async_connect(connection->m_sslSocket.lowest_layer(), std::initializer_list<Endpoint>({std::move(endpoint)}), [connection, callback](const asio::error_code& errorCode, const asio::ip::tcp::endpoint&) {
             if (errorCode) {
                 Debug::LogError(errorCode.message());
                 return;
             }
-
-            Debug::Log("ht");
 
             connection->m_sslSocket.async_handshake(SSLStreamBase::client, [connection, callback](const asio::error_code& errorCode) {
                 if (errorCode) {
@@ -68,15 +64,11 @@ public:
     static void Seek(IOContext& ioContext, SSLContext& sslContext, ts::deque<PackageIn<T>>& inDeque, Acceptor& acceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
         std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
 
-        Debug::Log("Seeking connection");
-
         acceptor.async_accept(connection->m_sslSocket.lowest_layer(), [connection, callback](const asio::error_code& errorCode) {
             if (errorCode) {
                 Debug::LogError(errorCode.message());
                 return;
             }
-
-            Debug::Log("ht");
 
             connection->m_sslSocket.async_handshake(SSLStreamBase::server, [connection, callback](const asio::error_code& errorCode) {
                 if (errorCode) {
