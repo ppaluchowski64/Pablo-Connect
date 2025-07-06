@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-typedef uint16_t PackageSizeInt;
+typedef uint32_t PackageSizeInt;
 typedef uint16_t PackageTypeInt;
 
 template <typename T>
@@ -31,9 +31,18 @@ concept StdLayoutOrVecOrString =
     is_std_layout_vector<T>::value ||
     std::is_same_v<T, std::string>;
 
+constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 8;
+
+enum class PackageFlag {
+    FULL    = 1 << 0,
+    PARTIAL = 1 << 1,
+    FILE    = 1 << 2
+};
+
 struct PackageHeader {
     PackageTypeInt type;
     PackageSizeInt size;
+    uint8_t        flags;
 };
 
 template <PackageType T>
@@ -48,7 +57,7 @@ public:
         return m_header;
     }
 
-    NO_DISCARD const uint8_t* GetRawBody() const {
+    NO_DISCARD uint8_t* GetRawBody() const {
         return m_rawBody;
     }
 
@@ -182,9 +191,23 @@ public:
         return newPackage;
     }
 
+    template <StdLayoutOrVecOrString... Args>
+    static std::unique_ptr<Package> CreateUniquePtr(T type, const Args&... args) {
+        PackageHeader header {
+            static_cast<PackageTypeInt>(type),
+            0
+        };
+        (CalculateElementSize(args, header), ...);
+        std::unique_ptr<Package> newPackage = std::make_unique<Package>(header);
+        PackageSizeInt offset = 0;
+        (InsertElementToBody(args, *newPackage, offset), ...);
+
+        return std::move(newPackage);
+    }
+
 private:
     template <typename T0>
-    static void InsertElementToBody(const T0& arg, Package& package, uint16_t& offset) {
+    static void InsertElementToBody(const T0& arg, Package& package, PackageSizeInt& offset) {
         using T = std::decay_t<T0>;
 
         if constexpr (std::is_same_v<T, std::string>) {
