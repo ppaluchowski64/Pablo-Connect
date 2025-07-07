@@ -8,6 +8,7 @@
 #include <TSVector.h>
 #include <thread>
 #include <SSL/Connection.h>
+#include <UniqueFileNamesGenerator.h>
 
 enum class packType : uint16_t {
     message
@@ -16,6 +17,10 @@ enum class packType : uint16_t {
 ts::vector<std::shared_ptr<Connection<packType>>> connections;
 void Callback(std::shared_ptr<Connection<packType>> connection) {
     connections.push_back(connection);
+}
+
+void Callback2(std::unique_ptr<Package<packType>> pack) {
+
 }
 
 
@@ -33,7 +38,7 @@ int main(int argc, char** argv) {
             IOContext context;
             auto work = asio::make_work_guard(context);
             std::thread thread([&]() {context.run();});
-            std::shared_ptr<SSLContext> sslContext = Connection<packType>::CreateSSLContext("certificate/certificate.crt", "certificate/privateKey.key", true);
+            std::shared_ptr<SSLContext> sslContext = Connection<packType>::CreateSSLContext("certificate/", true);
             ts::deque<PackageIn<packType>> packages;
             Acceptor acceptor(context, endpoint);
 
@@ -48,7 +53,7 @@ int main(int argc, char** argv) {
                     Debug::Log("Package from [" + std::to_string(package.connection->GetConnectionID()) + "]: " + value);
 
                     std::string message = "hello";
-                    std::unique_ptr<Package<packType>> pack = Package<packType>::CreateUniquePtr(packType::message, message);
+                    std::unique_ptr<Package<packType>> pack = Package<packType>::CreateUnique(packType::message, message);
                     package.connection->Send(std::move(pack));
                 }
             }
@@ -59,7 +64,7 @@ int main(int argc, char** argv) {
             IOContext context;
             auto work = asio::make_work_guard(context);
             std::thread thread([&]() {context.run();});
-            std::shared_ptr<SSLContext> sslContext = Connection<packType>::CreateSSLContext("certificate/certificate.crt", "certificate/privateKey.key", false);
+            std::shared_ptr<SSLContext> sslContext = Connection<packType>::CreateSSLContext("certificate/", false);
             ts::deque<PackageIn<packType>> packages;
             Endpoint endpoint(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), 20000));
 
@@ -80,11 +85,13 @@ int main(int argc, char** argv) {
                 std::cin >> message;
 
                 std::vector<std::shared_ptr<Connection<packType>>> sn = connections.snapshot();
-                std::unique_ptr<Package<packType>> pack = Package<packType>::CreateUniquePtr(packType::message, message);
+                std::unique_ptr<Package<packType>> pack = Package<packType>::CreateUnique(packType::message, message);
                 sn[0]->Send(std::move(pack));
+                sn[0]->SendRequest(packType::message, Callback2, "hello");
             }
         }
     }
+
 
     std::cin.get();
 }

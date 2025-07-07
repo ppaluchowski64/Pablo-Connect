@@ -7,10 +7,10 @@
 #include <TSDeque.h>
 #include <DebugLog.h>
 #include <memory>
+#include <filesystem>
 #include <asio/ssl/context_base.hpp>
 #include <SSL/Package.h>
 #include <asio/buffer.hpp>
-#include <SSL/CertificateManager.h>
 
 typedef asio::io_context IOContext;
 typedef asio::ssl::context SSLContext;
@@ -20,6 +20,8 @@ typedef asio::ip::tcp::endpoint Endpoint;
 typedef asio::ip::tcp::acceptor Acceptor;
 typedef asio::ssl::context::method SSLMethod;
 typedef asio::ssl::stream_base SSLStreamBase;
+
+constexpr uint32_t PACKAGES_WARN_THRESHOLD = 100;
 
 template <PackageType T>
 class Connection;
@@ -39,8 +41,10 @@ public:
 
     Connection() = delete;
 
-    static std::shared_ptr<SSLContext> CreateSSLContext(const std::string& certFile, const std::string& keyFile, const bool isServer) {
+    NO_DISCARD static std::shared_ptr<SSLContext> CreateSSLContext(const std::filesystem::path& path, const bool isServer) {
         std::shared_ptr<SSLContext> ctx = std::make_shared<SSLContext>(isServer ? SSLContext::tlsv13_server : SSLContext::tlsv13_client);
+        const std::string keyPath = (path / "privateKey.key").string();
+        const std::string certPath = (path / "certificate.crt").string();
 
         ctx->set_options(
             SSLContext::default_workarounds |
@@ -51,8 +55,8 @@ public:
             SSLContext::no_tlsv1_1
         );
 
-        ctx->use_certificate_chain_file(certFile);
-        ctx->use_private_key_file(keyFile, SSLContext::pem);
+        ctx->use_certificate_chain_file(certPath);
+        ctx->use_private_key_file(keyPath, SSLContext::pem);
         ctx->set_verify_mode(asio::ssl::verify_none);
 
         return ctx;
@@ -64,12 +68,14 @@ public:
         asio::async_connect(connection->m_sslSocket.lowest_layer(), std::initializer_list<Endpoint>({std::move(endpoint)}), [connection, callback](const asio::error_code& errorCode, const asio::ip::tcp::endpoint&) {
             if (errorCode) {
                 Debug::LogError(errorCode.message());
+                connection->Disconnect();
                 return;
             }
 
             connection->m_sslSocket.async_handshake(SSLStreamBase::client, [connection, callback](const asio::error_code& errorCode) {
                 if (errorCode) {
                     Debug::LogError(errorCode.message());
+                    connection->Disconnect();
                     return;
                 }
 
@@ -87,12 +93,15 @@ public:
         acceptor.async_accept(connection->m_sslSocket.lowest_layer(), [connection, callback](const asio::error_code& errorCode) {
             if (errorCode) {
                 Debug::LogError(errorCode.message());
+                connection->Disconnect();
                 return;
             }
 
             connection->m_sslSocket.async_handshake(SSLStreamBase::server, [connection, callback](const asio::error_code& errorCode) {
                 if (errorCode) {
                     Debug::LogError(errorCode.message());
+                    connection->Disconnect();
+                    return;
                 }
 
                 Debug::Log("Accepted connection from " + connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string() + ":" + std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()));
@@ -106,12 +115,64 @@ public:
     void Send(std::unique_ptr<Package<T>>&& package) {
         m_outDeque.push_back(std::move(package));
 
+        if (const size_t dequeSize = m_outDeque.size(); dequeSize > PACKAGES_WARN_THRESHOLD) {
+            Debug::LogWarning("Output queue size is growing: " + std::to_string(dequeSize));
+        }
+
         if (!m_sending) {
+            m_sending = true;
             SendMessage();
         }
     }
 
-    uint16_t GetConnectionID() const {
+    template <StdLayoutOrVecOrString... Args>
+    void Send(T type, PackageFlag flag, Args... args) {
+        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(type, args);
+        package->GetHeader().flags = flag;
+
+        m_outDeque.push_back(std::move(package));
+        if (!m_sending) {
+            m_sending = true;
+            SendMessage();
+        }
+    }
+
+    template <StdLayoutOrVecOrString... Args>
+    void SendRequest(T type, std::function<void(std::unique_ptr<Package<T>>)> callback, Args... args) {
+        uint32_t requestID = m_currentRequestID++;
+
+        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(type, requestID, args);
+        m_requestCallbacks[requestID] = std::move(callback);
+        package->GetHeader().flags = PackageFlag::REQUEST;
+
+        m_outDeque.push_back(std::move(package));
+
+        if (!m_sending) {
+            m_sending = true;
+            SendMessage();
+        }
+    }
+
+    void Disconnect() {
+        if (!m_sslSocket.lowest_layer().is_open()) {
+            return;
+        }
+
+        std::shared_ptr<Connection<T>> connection = this->shared_from_this();
+        m_sslSocket.async_shutdown([connection](const asio::error_code& errorCode) {
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+            }
+
+            connection->m_sslSocket.lowest_layer().close(errorCode);
+
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+            }
+        });
+    }
+
+    NO_DISCARD uint16_t GetConnectionID() const {
         return m_connectionID;
     }
 
@@ -129,6 +190,7 @@ private:
         m_sslSocket.async_write_some(buffers, [connection](const asio::error_code& errorCode, const size_t) {
             if (errorCode) {
                 Debug::LogError(errorCode.message());
+                connection->Disconnect();
                 return;
             }
 
@@ -141,6 +203,28 @@ private:
         });
     }
 
+    void HandleFullReceive() {
+        PackageHeader header = m_packageIn->GetHeader();
+
+        if (const PackageFlag flag = static_cast<PackageFlag>(header.flags); (flag & PackageFlag::FILE) != 0) {
+            if ((flag & PackageFlag::REQUEST) != 0) {
+
+            } else {
+
+            }
+
+
+        } else {
+
+
+
+        }
+    }
+
+    void HandlePartialReceive() {
+
+    }
+
     void ReceiveMessage() {
         std::shared_ptr<Connection<T>> connection = this->shared_from_this();
         m_packageIn = std::make_unique<Package<T>>(PackageHeader());
@@ -149,27 +233,19 @@ private:
         asio::async_read(m_sslSocket, headerBuf, [connection](const asio::error_code& errorCode, const size_t bytes) {
             if (errorCode) {
                 Debug::LogError(errorCode.message());
+                connection->Disconnect();
                 return;
             }
 
             PackageHeader header = connection->m_packageIn->GetHeader();
             connection->m_packageIn = std::make_unique<Package<T>>(header);
-            asio::mutable_buffer bodyBuf(connection->m_packageIn->GetRawBody(), header.size);
 
-            asio::async_read(connection->m_sslSocket, bodyBuf, [connection](const asio::error_code& errorCode, const size_t bytes) {
-                if (errorCode) {
-                    Debug::LogError(errorCode.message());
-                    return;
-                }
+            if (header.size <= MAX_FULL_PACKAGE_SIZE) {
+                connection->HandleFullReceive();
+                return;
+            }
 
-                PackageIn packageIn {
-                    std::move(connection->m_packageIn),
-                    connection
-                };
-
-                connection->m_inDeque.push_back(std::move(packageIn));
-                connection->ReceiveMessage();
-            });
+            connection->HandlePartialReceive();
         });
     }
 
@@ -177,9 +253,12 @@ private:
     std::shared_ptr<SSLContext> m_sslContext;
     SSLSocket                   m_sslSocket;
     uint16_t                    m_connectionID{};
+    uint32_t                    m_currentRequestID{0};
     bool                        m_sending{false};
     std::unique_ptr<Package<T>> m_packageOut;
     std::unique_ptr<Package<T>> m_packageIn;
+
+    std::unordered_map<uint32_t, std::function<void(std::unique_ptr<Package<T>>)>> m_requestCallbacks;
 
     ts::deque<std::unique_ptr<Package<T>>> m_outDeque;
     ts::deque<PackageIn<T>>&               m_inDeque;

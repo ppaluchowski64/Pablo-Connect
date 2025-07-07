@@ -32,12 +32,46 @@ concept StdLayoutOrVecOrString =
     std::is_same_v<T, std::string>;
 
 constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 8;
+constexpr PackageSizeInt MAX_FULL_PACKAGE_SIZE = 1024 * 64;
 
-enum class PackageFlag {
-    FULL    = 1 << 0,
-    PARTIAL = 1 << 1,
-    FILE    = 1 << 2
+enum class PackageFlag : uint8_t {
+    FILE               = 1 << 0,
+    REQUEST            = 1 << 1,
+    FILE_NAME_INCLUDED = 1 << 2
 };
+
+inline PackageFlag operator|(PackageFlag lhs, PackageFlag rhs) {
+    return static_cast<PackageFlag>(
+        static_cast<uint8_t>(lhs) | static_cast<uint8_t>(rhs));
+}
+
+inline PackageFlag operator&(PackageFlag lhs, PackageFlag rhs) {
+    return static_cast<PackageFlag>(
+        static_cast<uint8_t>(lhs) & static_cast<uint8_t>(rhs));
+}
+
+inline PackageFlag operator^(PackageFlag lhs, PackageFlag rhs) {
+    return static_cast<PackageFlag>(
+        static_cast<uint8_t>(lhs) ^ static_cast<uint8_t>(rhs));
+}
+
+inline PackageFlag operator~(PackageFlag f) {
+    return static_cast<PackageFlag>(~static_cast<uint8_t>(f));
+}
+
+inline PackageFlag& operator|=(PackageFlag& lhs, PackageFlag rhs) {
+    lhs = lhs | rhs;
+    return lhs;
+}
+
+inline PackageFlag& operator&=(PackageFlag& lhs, PackageFlag rhs) {
+    lhs = lhs & rhs;
+    return lhs;
+}
+
+inline bool operator!=(PackageFlag l, const int r) {
+    return static_cast<int>(l) != r;
+}
 
 struct PackageHeader {
     PackageTypeInt type;
@@ -192,7 +226,7 @@ public:
     }
 
     template <StdLayoutOrVecOrString... Args>
-    static std::unique_ptr<Package> CreateUniquePtr(T type, const Args&... args) {
+    static std::unique_ptr<Package> CreateUnique(T type, const Args&... args) {
         PackageHeader header {
             static_cast<PackageTypeInt>(type),
             0
