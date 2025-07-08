@@ -31,13 +31,12 @@ concept StdLayoutOrVecOrString =
     is_std_layout_vector<T>::value ||
     std::is_same_v<T, std::string>;
 
-constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 8;
+constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 32;
 constexpr PackageSizeInt MAX_FULL_PACKAGE_SIZE = 1024 * 64;
 
 enum class PackageFlag : uint8_t {
     FILE               = 1 << 0,
-    REQUEST            = 1 << 1,
-    FILE_NAME_INCLUDED = 1 << 2
+    FILE_NAME_INCLUDED = 1 << 1
 };
 
 inline PackageFlag operator|(PackageFlag lhs, PackageFlag rhs) {

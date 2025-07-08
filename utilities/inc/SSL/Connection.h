@@ -11,6 +11,7 @@
 #include <asio/ssl/context_base.hpp>
 #include <SSL/Package.h>
 #include <asio/buffer.hpp>
+#include <UniqueFileNamesGenerator.h>
 
 typedef asio::io_context IOContext;
 typedef asio::ssl::context SSLContext;
@@ -65,6 +66,10 @@ public:
     static void Start(IOContext& ioContext, std::shared_ptr<SSLContext> sslContext, ts::deque<PackageIn<T>>& inDeque, Endpoint endpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
         std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
 
+        std::call_once(s_onceFlag, []() {
+           s_fileNamesGenerator = UniqueFileNamesGenerator("files/", "file_", ".dat");
+        });
+
         asio::async_connect(connection->m_sslSocket.lowest_layer(), std::initializer_list<Endpoint>({std::move(endpoint)}), [connection, callback](const asio::error_code& errorCode, const asio::ip::tcp::endpoint&) {
             if (errorCode) {
                 Debug::LogError(errorCode.message());
@@ -89,6 +94,10 @@ public:
 
     static void Seek(IOContext& ioContext, std::shared_ptr<SSLContext> sslContext, ts::deque<PackageIn<T>>& inDeque, Acceptor& acceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
         std::shared_ptr<Connection<T>> connection = std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
+
+        std::call_once(s_onceFlag, []() {
+           s_fileNamesGenerator = UniqueFileNamesGenerator("files/", "file_", ".dat");
+        });
 
         acceptor.async_accept(connection->m_sslSocket.lowest_layer(), [connection, callback](const asio::error_code& errorCode) {
             if (errorCode) {
@@ -137,21 +146,21 @@ public:
         }
     }
 
-    template <StdLayoutOrVecOrString... Args>
-    void SendRequest(T type, std::function<void(std::unique_ptr<Package<T>>)> callback, Args... args) {
-        uint32_t requestID = m_currentRequestID++;
-
-        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(type, requestID, args);
-        m_requestCallbacks[requestID] = std::move(callback);
-        package->GetHeader().flags = PackageFlag::REQUEST;
-
-        m_outDeque.push_back(std::move(package));
-
-        if (!m_sending) {
-            m_sending = true;
-            SendMessage();
-        }
-    }
+    // template <StdLayoutOrVecOrString... Args>
+    // void SendRequest(T type, std::function<void(std::unique_ptr<Package<T>>)> callback, Args... args) {
+    //     uint32_t requestID = m_currentRequestID++;
+    //
+    //     std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(type, requestID, args);
+    //     m_requestCallbacks[requestID] = std::move(callback);
+    //     package->GetHeader().flags = PackageFlag::REQUEST;
+    //
+    //     m_outDeque.push_back(std::move(package));
+    //
+    //     if (!m_sending) {
+    //         m_sending = true;
+    //         SendMessage();
+    //     }
+    // }
 
     void Disconnect() {
         if (!m_sslSocket.lowest_layer().is_open()) {
@@ -207,15 +216,16 @@ private:
         PackageHeader header = m_packageIn->GetHeader();
 
         if (const PackageFlag flag = static_cast<PackageFlag>(header.flags); (flag & PackageFlag::FILE) != 0) {
-            if ((flag & PackageFlag::REQUEST) != 0) {
+            std::string fileName;
 
+            if ((flag & PackageFlag::FILE_NAME_INCLUDED) != 0) {
+                m_packageIn->GetValue(fileName);
             } else {
-
+                fileName = s_fileNamesGenerator.GetUniqueName();
             }
 
 
         } else {
-
 
 
         }
@@ -253,17 +263,19 @@ private:
     std::shared_ptr<SSLContext> m_sslContext;
     SSLSocket                   m_sslSocket;
     uint16_t                    m_connectionID{};
-    uint32_t                    m_currentRequestID{0};
+    //uint32_t                    m_currentRequestID{0};
     bool                        m_sending{false};
     std::unique_ptr<Package<T>> m_packageOut;
     std::unique_ptr<Package<T>> m_packageIn;
 
-    std::unordered_map<uint32_t, std::function<void(std::unique_ptr<Package<T>>)>> m_requestCallbacks;
+    //std::unordered_map<uint32_t, std::function<void(std::unique_ptr<Package<T>>)>> m_requestCallbacks;
 
     ts::deque<std::unique_ptr<Package<T>>> m_outDeque;
     ts::deque<PackageIn<T>>&               m_inDeque;
 
-    static uint16_t s_currentConnectionID;
+    static uint16_t                 s_currentConnectionID;
+    static UniqueFileNamesGenerator s_fileNamesGenerator;
+    static std::once_flag           s_onceFlag;
 };
 
 template <PackageType T>
