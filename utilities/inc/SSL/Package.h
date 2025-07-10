@@ -5,6 +5,7 @@
 #define NO_DISCARD [[nodiscard]]
 #endif
 
+#include <DebugLog.h>
 #include <type_traits>
 #include <string>
 #include <vector>
@@ -35,6 +36,7 @@ constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 32;
 constexpr PackageSizeInt MAX_FULL_PACKAGE_SIZE = 1024 * 64;
 
 enum class PackageFlag : uint8_t {
+    NONE               = 0,
     FILE               = 1 << 0,
     FILE_NAME_INCLUDED = 1 << 1
 };

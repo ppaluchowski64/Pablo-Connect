@@ -1,97 +1,81 @@
-#include <DebugLog.h>
-#include <iostream>
-#include <functional>
-#include <vector>
-#include <algorithm>
-#include <SSL/CertificateManager.h>
-#include <SSL/Package.h>
-#include <TSVector.h>
-#include <thread>
 #include <SSL/Connection.h>
-#include <UniqueFileNamesGenerator.h>
+#include <SSL/CertificateManager.h>
+#include <iostream>
+#include <thread>
+#include <TSDeque.h>
+#include <asio.hpp>
+#include <asio/ssl.hpp>
 
 enum class packType : uint16_t {
-    message
+    Hello
 };
 
-ts::vector<std::shared_ptr<Connection<packType>>> connections;
-void Callback(std::shared_ptr<Connection<packType>> connection) {
-    connections.push_back(connection);
-}
+using namespace std;
+typedef Connection<packType> MyConnection; // Replace packType with your enum/type
 
-void Callback2(std::unique_ptr<Package<packType>> pack) {
+int main() {
+    try {
+        asio::io_context ioContext;
+        // Paths to your SSL keys/certs
+        filesystem::path sslPath = "certificates/";
 
-}
-
-
-int main(int argc, char** argv) {
-    if (!CertificateManager::IsCertificateValid("certificate/")) {
-        Debug::Log("Generating new ssl certificate");
-        CertificateManager::GenerateCertificate("certificate/");
-    }
-
-    if (argc > 1) {
-        if (std::string(argv[1]) == "server") {
-            Debug::Log("Starting server");
-            Endpoint endpoint(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), 20000));
-
-            IOContext context;
-            auto work = asio::make_work_guard(context);
-            std::thread thread([&]() {context.run();});
-            std::shared_ptr<SSLContext> sslContext = Connection<packType>::CreateSSLContext("certificate/", true);
-            ts::deque<PackageIn<packType>> packages;
-            Acceptor acceptor(context, endpoint);
-
-            Connection<packType>::Seek(context, sslContext, packages, acceptor, Callback);
-
-            while (true) {
-                while (!packages.empty()) {
-                    PackageIn<packType> package = packages.pop_front();
-                    std::string value;
-                    package.package->GetValue<std::string>(value);
-
-                    Debug::Log("Package from [" + std::to_string(package.connection->GetConnectionID()) + "]: " + value);
-
-                    std::string message = "hello";
-                    std::unique_ptr<Package<packType>> pack = Package<packType>::CreateUnique(packType::message, message);
-                    package.connection->Send(std::move(pack));
-                }
-            }
+        if (!CertificateManager::IsCertificateValid(sslPath)) {
+            CertificateManager::GenerateCertificate(sslPath);
         }
 
-        if (std::string(argv[1]) == "client") {
-            Debug::Log("Starting client");
-            IOContext context;
-            auto work = asio::make_work_guard(context);
-            std::thread thread([&]() {context.run();});
-            std::shared_ptr<SSLContext> sslContext = Connection<packType>::CreateSSLContext("certificate/", false);
-            ts::deque<PackageIn<packType>> packages;
-            Endpoint endpoint(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), 20000));
+        auto sslServerCtx = MyConnection::CreateSSLContext(sslPath, true);
+        auto sslClientCtx = MyConnection::CreateSSLContext(sslPath, false);
 
-            Connection<packType>::Start(context, sslContext, packages,endpoint, Callback);
+        // Inbound deque shared between server and client handlers
+        ts::deque<PackageIn<packType>> inDeque;
 
-            while (true) {
-                while (!packages.empty()) {
-                    PackageIn<packType> package = packages.pop_front();
-                    std::string value;
-                    package.package->GetValue<std::string>(value);
+        // Storage for connections to keep them alive
+        vector<shared_ptr<MyConnection>> connections;
+        connections.reserve(2);
 
-                    Debug::Log("Package from [" + std::to_string(package.connection->GetConnectionID()) + "]: " + value);
-                }
-
-                if (connections.size() == 0) continue;
-
-                std::string message;
-                std::cin >> message;
-
-                std::vector<std::shared_ptr<Connection<packType>>> sn = connections.snapshot();
-                std::unique_ptr<Package<packType>> pack = Package<packType>::CreateUnique(packType::message, message);
-                sn[0]->Send(std::move(pack));
-                sn[0]->SendRequest(packType::message, Callback2, "hello");
+        // Server setup
+        asio::ip::tcp::acceptor acceptor(ioContext, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 12345));
+        MyConnection::Seek(ioContext, sslServerCtx, inDeque, acceptor,
+            [&](shared_ptr<MyConnection> conn) {
+                cout << "Server: New connection ID " << conn->GetConnectionID() << endl;
+                connections.push_back(conn);
             }
+        );
+
+        // Client setup
+        asio::ip::tcp::resolver resolver(ioContext);
+        auto endpoints = resolver.resolve("127.0.0.1", "12345");
+        MyConnection::Start(ioContext, sslClientCtx, inDeque, *endpoints.begin(),
+            [&](shared_ptr<MyConnection> conn) {
+                cout << "Client: Connected with ID " << conn->GetConnectionID() << endl;
+                connections.push_back(conn);
+
+                // Send a test message (replace with real package type and args)
+                conn->Send(packType::Hello, PackageFlag::NONE, string("Hello from client!"));
+            }
+        );
+
+        // Run context in background thread
+        thread ioThread([&]() { ioContext.run(); });
+
+        // Simple loop to process incoming packages
+        while (true) {
+            if (!inDeque.empty()) {
+                auto pkgIn = inDeque.pop_front();
+                auto& pkg = pkgIn.package;
+                auto& conn = pkgIn.connection;
+
+                // Example: read a string
+                string msg = pkg->GetValue<string>();
+                // Echo back
+                conn->Send(packType::Hello, PackageFlag::NONE, string("Echo: " + msg + msg + msg + msg + msg + msg + msg + msg + msg));
+            }
+            this_thread::sleep_for(chrono::milliseconds(100));
         }
+
+        ioThread.join();
+    } catch (exception& e) {
+        cerr << "Exception: " << e.what() << endl;
     }
-
-
-    std::cin.get();
+    return 0;
 }
