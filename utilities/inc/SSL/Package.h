@@ -34,50 +34,42 @@ concept StdLayoutOrVecOrString =
 
 constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 32;
 constexpr PackageSizeInt MAX_FULL_PACKAGE_SIZE = 1024 * 64;
+constexpr PackageSizeInt MAX_FILE_NAME_SIZE = 255;
+constexpr PackageSizeInt FILE_BUFFER_SIZE = 128 * 1024;
 
 enum class PackageFlag : uint8_t {
     NONE               = 0,
     FILE               = 1 << 0,
-    FILE_NAME_INCLUDED = 1 << 1
+    FILE_NAME_INCLUDED = 1 << 1,
+    FILE_REQUEST       = 1 << 2,
+    FILE_RECEIVE_INFO  = 1 << 3
 };
 
-inline PackageFlag operator|(PackageFlag lhs, PackageFlag rhs) {
-    return static_cast<PackageFlag>(
-        static_cast<uint8_t>(lhs) | static_cast<uint8_t>(rhs));
+inline uint8_t operator&(uint8_t l, PackageFlag r) {
+    return l & static_cast<uint8_t>(r);
 }
 
-inline PackageFlag operator&(PackageFlag lhs, PackageFlag rhs) {
-    return static_cast<PackageFlag>(
-        static_cast<uint8_t>(lhs) & static_cast<uint8_t>(rhs));
+inline uint8_t operator&(PackageFlag l, uint8_t r) {
+    return static_cast<uint8_t>(l) & r;
 }
 
-inline PackageFlag operator^(PackageFlag lhs, PackageFlag rhs) {
-    return static_cast<PackageFlag>(
-        static_cast<uint8_t>(lhs) ^ static_cast<uint8_t>(rhs));
+inline uint8_t operator|(uint8_t l, PackageFlag r) {
+    return l | static_cast<uint8_t>(r);
 }
 
-inline PackageFlag operator~(PackageFlag f) {
-    return static_cast<PackageFlag>(~static_cast<uint8_t>(f));
-}
-
-inline PackageFlag& operator|=(PackageFlag& lhs, PackageFlag rhs) {
-    lhs = lhs | rhs;
-    return lhs;
-}
-
-inline PackageFlag& operator&=(PackageFlag& lhs, PackageFlag rhs) {
-    lhs = lhs & rhs;
-    return lhs;
-}
-
-inline bool operator!=(PackageFlag l, const int r) {
-    return static_cast<int>(l) != r;
+inline uint8_t operator|(PackageFlag l, uint8_t r) {
+    return static_cast<uint8_t>(l) | r;
 }
 
 struct PackageHeader {
     PackageTypeInt type;
     PackageSizeInt size;
     uint8_t        flags;
+};
+
+struct FilePackageData {
+    PackageSizeInt size;
+    std::string    fileName;
 };
 
 template <PackageType T>

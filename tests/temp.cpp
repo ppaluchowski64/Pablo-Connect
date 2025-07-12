@@ -1,81 +1,122 @@
-#include <SSL/Connection.h>
-#include <SSL/CertificateManager.h>
 #include <iostream>
+#include <chrono>
 #include <thread>
-#include <TSDeque.h>
-#include <asio.hpp>
-#include <asio/ssl.hpp>
+#include <atomic>
+#include <SSL/CertificateManager.h>
+#include <SSL/Connection.h>
 
-enum class packType : uint16_t {
-    Hello
+// Define a simple package type for the benchmark
+enum class BenchmarkPackageType : uint16_t {
+    BENCHMARK_PACKET,
 };
 
-using namespace std;
-typedef Connection<packType> MyConnection; // Replace packType with your enum/type
+// Global atomic counter for received packets
+std::atomic<uint64_t> g_packetsReceived = 0;
+// Global flag to stop the benchmark
+std::atomic<bool> g_stopBenchmark = false;
+
+// Server's callback when a client connects
+void on_server_connection(std::shared_ptr<Connection<BenchmarkPackageType>> connection) {
+    std::cout << "Client connected with ID: " << connection->GetConnectionID() << std::endl;
+}
+
+// Client's callback when connected to the server
+void on_client_connection(std::shared_ptr<Connection<BenchmarkPackageType>> connection) {
+    std::cout << "Connected to server with ID: " << connection->GetConnectionID() << std::endl;
+    // Start sending packets
+    std::thread sender_thread([connection]() {
+        while (!g_stopBenchmark) {
+            // Send a simple packet with no payload
+            connection->Send(BenchmarkPackageType::BENCHMARK_PACKET, PackageFlag::NONE);
+        }
+    });
+    sender_thread.detach();
+}
 
 int main() {
-    try {
-        asio::io_context ioContext;
-        // Paths to your SSL keys/certs
-        filesystem::path sslPath = "certificates/";
+    // 1. Setup
+    const std::filesystem::path certPath = "./certs";
+    const int benchmark_duration_seconds = 10;
 
-        if (!CertificateManager::IsCertificateValid(sslPath)) {
-            CertificateManager::GenerateCertificate(sslPath);
-        }
-
-        auto sslServerCtx = MyConnection::CreateSSLContext(sslPath, true);
-        auto sslClientCtx = MyConnection::CreateSSLContext(sslPath, false);
-
-        // Inbound deque shared between server and client handlers
-        ts::deque<PackageIn<packType>> inDeque;
-
-        // Storage for connections to keep them alive
-        vector<shared_ptr<MyConnection>> connections;
-        connections.reserve(2);
-
-        // Server setup
-        asio::ip::tcp::acceptor acceptor(ioContext, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 12345));
-        MyConnection::Seek(ioContext, sslServerCtx, inDeque, acceptor,
-            [&](shared_ptr<MyConnection> conn) {
-                cout << "Server: New connection ID " << conn->GetConnectionID() << endl;
-                connections.push_back(conn);
-            }
-        );
-
-        // Client setup
-        asio::ip::tcp::resolver resolver(ioContext);
-        auto endpoints = resolver.resolve("127.0.0.1", "12345");
-        MyConnection::Start(ioContext, sslClientCtx, inDeque, *endpoints.begin(),
-            [&](shared_ptr<MyConnection> conn) {
-                cout << "Client: Connected with ID " << conn->GetConnectionID() << endl;
-                connections.push_back(conn);
-
-                // Send a test message (replace with real package type and args)
-                conn->Send(packType::Hello, PackageFlag::NONE, string("Hello from client!"));
-            }
-        );
-
-        // Run context in background thread
-        thread ioThread([&]() { ioContext.run(); });
-
-        // Simple loop to process incoming packages
-        while (true) {
-            if (!inDeque.empty()) {
-                auto pkgIn = inDeque.pop_front();
-                auto& pkg = pkgIn.package;
-                auto& conn = pkgIn.connection;
-
-                // Example: read a string
-                string msg = pkg->GetValue<string>();
-                // Echo back
-                conn->Send(packType::Hello, PackageFlag::NONE, string("Echo: " + msg + msg + msg + msg + msg + msg + msg + msg + msg));
-            }
-            this_thread::sleep_for(chrono::milliseconds(100));
-        }
-
-        ioThread.join();
-    } catch (exception& e) {
-        cerr << "Exception: " << e.what() << endl;
+    // Generate certificates if they don't exist or are invalid
+    if (!CertificateManager::IsCertificateValid(certPath)) {
+        std::cout << "Generating new SSL certificates..." << std::endl;
+        CertificateManager::GenerateCertificate(certPath);
     }
+
+    // Create IO contexts for server and client
+    asio::io_context server_io_context;
+    asio::io_context client_io_context;
+
+    // Create SSL contexts
+    auto server_ssl_context = Connection<BenchmarkPackageType>::CreateSSLContext(certPath, true);
+    auto client_ssl_context = Connection<BenchmarkPackageType>::CreateSSLContext(certPath, false);
+
+    // Create thread-safe deques for incoming packages
+    ts::deque<PackageIn<BenchmarkPackageType>> server_in_deque;
+    ts::deque<PackageIn<BenchmarkPackageType>> client_in_deque; // Not used in this benchmark
+
+    // 2. Create Server
+    auto server_connection = Connection<BenchmarkPackageType>::Create(server_io_context, server_ssl_context, server_in_deque);
+    Acceptor connection_acceptor(server_io_context, Endpoint(asio::ip::tcp::v4(), SSL_CONNECTION_PORT));
+    Acceptor file_stream_acceptor(server_io_context, Endpoint(asio::ip::tcp::v4(), SSL_FILE_STREAM_PORT));
+    server_connection->Seek(connection_acceptor, file_stream_acceptor, on_server_connection);
+
+    // Run the server io_context in a separate thread
+    std::thread server_thread([&server_io_context]() {
+        server_io_context.run();
+    });
+
+    // 3. Create Client
+    auto client_connection = Connection<BenchmarkPackageType>::Create(client_io_context, client_ssl_context, client_in_deque);
+    IPAddress server_address = asio::ip::make_address("127.0.0.1");
+    client_connection->Start(server_address, SSL_CONNECTION_PORT, SSL_FILE_STREAM_PORT, on_client_connection);
+
+    // Run the client io_context in a separate thread
+    std::thread client_thread([&client_io_context]() {
+        client_io_context.run();
+    });
+
+    // 4. Run Benchmark
+    std::cout << "Starting benchmark for " << benchmark_duration_seconds << " seconds..." << std::endl;
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count() < benchmark_duration_seconds) {
+        // Pop and count packets on the server side
+        if (!server_in_deque.empty()) {
+            server_in_deque.pop_front();
+            g_packetsReceived++;
+        }
+    }
+    g_stopBenchmark = true;
+
+    while (!server_in_deque.empty()) {
+        server_in_deque.pop_front();
+        g_packetsReceived++;
+    }
+
+    // 5. Results
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+
+    std::cout << "Benchmark finished." << std::endl;
+    std::cout << "Total packets received: " << g_packetsReceived << std::endl;
+    std::cout << "Total time: " << duration / 1000.0 << " seconds" << std::endl;
+    std::cout << "Packets per second: " << (g_packetsReceived * 1000.0) / duration << std::endl;
+
+    // 6. Cleanup
+    client_connection->Disconnect();
+    server_connection->Disconnect();
+
+    server_io_context.stop();
+    client_io_context.stop();
+
+    if (server_thread.joinable()) {
+        server_thread.join();
+    }
+    if (client_thread.joinable()) {
+        client_thread.join();
+    }
+
     return 0;
 }

@@ -1,5 +1,11 @@
 #include <UniqueFileNamesGenerator.h>
 
+std::filesystem::path UniqueFileNamesGenerator::s_path{};
+std::fstream          UniqueFileNamesGenerator::s_uniqueNamesFile{};
+std::string           UniqueFileNamesGenerator::s_prefix{};
+std::string           UniqueFileNamesGenerator::s_suffix{};
+std::mutex            UniqueFileNamesGenerator::s_mutex{};
+
 void UniqueFileNamesGenerator::SetFilePath(std::filesystem::path& path) {
     std::lock_guard lock(s_mutex);
 
@@ -51,7 +57,7 @@ std::string UniqueFileNamesGenerator::GetUniqueName() {
     std::lock_guard lock(s_mutex);
 
     s_uniqueNamesFile.seekg(0, std::ios::end);
-    const size_t size = s_uniqueNamesFile.tellg();
+    const std::streamsize size = s_uniqueNamesFile.tellg();
     s_uniqueNamesFile.seekg(0);
 
     std::string content;
@@ -64,7 +70,7 @@ std::string UniqueFileNamesGenerator::GetUniqueName() {
 
     std::string result = (s_path / s_prefix).string() + content + s_suffix;
 
-    int i = content.size() - 1;
+    int i = static_cast<int>(content.size()) - 1;
     for (; i >= 0; --i) {
         if (content[i] < '9') {
             content[i]++;
