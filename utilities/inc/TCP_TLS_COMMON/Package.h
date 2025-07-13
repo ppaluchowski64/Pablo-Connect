@@ -8,34 +8,7 @@
 #include <DebugLog.h>
 #include <type_traits>
 #include <string>
-#include <vector>
-
-typedef uint32_t PackageSizeInt;
-typedef uint16_t PackageTypeInt;
-
-template <typename T>
-concept PackageType = std::is_same_v<std::underlying_type_t<T>, PackageTypeInt>;
-
-template <typename T>
-concept StandardLayaut = std::is_standard_layout_v<T>;
-
-template<typename T>
-struct is_std_layout_vector : std::false_type {};
-
-template<typename U>
-struct is_std_layout_vector<std::vector<U>>
-    : std::bool_constant<std::is_standard_layout_v<U>> {};
-
-template<typename T>
-concept StdLayoutOrVecOrString =
-    std::is_standard_layout_v<T> ||
-    is_std_layout_vector<T>::value ||
-    std::is_same_v<T, std::string>;
-
-constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 32;
-constexpr PackageSizeInt MAX_FULL_PACKAGE_SIZE = 1024 * 64;
-constexpr PackageSizeInt MAX_FILE_NAME_SIZE = 255;
-constexpr PackageSizeInt FILE_BUFFER_SIZE = 128 * 1024;
+#include <TCP_TLS_COMMON/Common.h>
 
 enum class PackageFlag : uint8_t {
     NONE               = 0,

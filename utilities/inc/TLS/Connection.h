@@ -13,26 +13,13 @@
 #include <memory>
 #include <filesystem>
 #include <asio/ssl/context_base.hpp>
-#include <TCP/Package.h>
+#include <TCP_TLS_COMMON/Package.h>
+#include <TCP_TLS_COMMON/Common.h>
 #include <asio/buffer.hpp>
 #include <AwaitableFlag.h>
 #include <UniqueFileNamesGenerator.h>
 
-typedef asio::io_context IOContext;
-typedef asio::ssl::context SSLContext;
-typedef asio::ip::tcp::socket TCPSocket;
-typedef asio::ssl::stream<asio::ip::tcp::socket> SSLSocket;
-typedef asio::ip::tcp::endpoint Endpoint;
-typedef asio::ip::tcp::acceptor Acceptor;
-typedef asio::ssl::context::method SSLMethod;
-typedef asio::ssl::stream_base SSLStreamBase;
-typedef asio::ip::address IPAddress;
-
 namespace TLS {
-    constexpr uint32_t PACKAGES_WARN_THRESHOLD = 10000;
-    constexpr uint16_t SSL_CONNECTION_PORT = 50000;
-    constexpr uint16_t SSL_FILE_STREAM_PORT = 50001;
-
     template <PackageType T>
     class Connection;
 
@@ -70,7 +57,6 @@ namespace TLS {
 
             ctx->set_options(
                 SSLContext::default_workarounds |
-                SSLContext::default_workarounds |
                 SSLContext::no_sslv2 |
                 SSLContext::no_sslv3 |
                 SSLContext::no_tlsv1 |
@@ -88,7 +74,7 @@ namespace TLS {
             return std::make_shared<Connection<T>>(ioContext, sslContext, inDeque);
         }
 
-        void Seek(Acceptor& connectionAcceptor, Acceptor& fileStreamAcceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        void Seek(TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
             if (m_connectionState != ConnectionState::DISCONNECTED) {
                 Debug::LogError("Connection already started");
                 return;
@@ -98,7 +84,7 @@ namespace TLS {
             asio::co_spawn(m_context, coSeek(connection, connectionAcceptor, fileStreamAcceptor, callback), asio::detached);
         }
 
-        void Start(const Endpoint& connectionEndpoint, const Endpoint& fileStreamEndpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        void Start(const TCPEndpoint& connectionEndpoint, const TCPEndpoint& fileStreamEndpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
             if (m_connectionState != ConnectionState::DISCONNECTED) {
                 Debug::LogError("Connection already started");
                 return;
@@ -115,7 +101,7 @@ namespace TLS {
             }
 
             std::shared_ptr<Connection<T>> connection = this->shared_from_this();
-            asio::co_spawn(m_context, coStart(connection, Endpoint(address, connectionPort), Endpoint(address, fileStreamPort), callback), asio::detached);
+            asio::co_spawn(m_context, coStart(connection, TCPEndpoint(address, connectionPort), TCPEndpoint(address, fileStreamPort), callback), asio::detached);
         }
 
         NO_DISCARD ConnectionState GetConnectionState() {
@@ -164,11 +150,11 @@ namespace TLS {
         }
 
     private:
-        static asio::awaitable<void> coStart(std::shared_ptr<Connection<T>> connection, const Endpoint connectionEndpoint, const Endpoint fileStreamEndpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        static asio::awaitable<void> coStart(std::shared_ptr<Connection<T>> connection, const TCPEndpoint connectionEndpoint, const TCPEndpoint fileStreamEndpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
             try {
                 connection->m_connectionState = ConnectionState::CONNECTING;
-                std::initializer_list<Endpoint> connectionEndpoints({connectionEndpoint});
-                std::initializer_list<Endpoint> fileStreamEndpoints({fileStreamEndpoint});
+                std::initializer_list<TCPEndpoint> connectionEndpoints({connectionEndpoint});
+                std::initializer_list<TCPEndpoint> fileStreamEndpoints({fileStreamEndpoint});
 
                 co_await asio::async_connect(connection->m_sslSocket.lowest_layer(), connectionEndpoints, asio::use_awaitable);
                 co_await connection->m_sslSocket.async_handshake(SSLStreamBase::client, asio::use_awaitable);
@@ -197,7 +183,7 @@ namespace TLS {
             }
         }
 
-        static asio::awaitable<void> coSeek(std::shared_ptr<Connection<T>> connection, Acceptor& connectionAcceptor, Acceptor& fileStreamAcceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        static asio::awaitable<void> coSeek(std::shared_ptr<Connection<T>> connection, TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
             try {
                 connection->m_connectionState = ConnectionState::CONNECTING;
                 co_await connectionAcceptor.async_accept(connection->m_sslSocket.lowest_layer(), asio::use_awaitable);
@@ -431,8 +417,6 @@ namespace TLS {
                             connection->Disconnect();
                             co_return;
                         }
-
-                        const PackageSizeInt fullSize = size;
 
                         while (size > 0) {
                             const PackageSizeInt readSize = std::min(size, FILE_BUFFER_SIZE);
