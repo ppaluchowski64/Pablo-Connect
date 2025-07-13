@@ -63,9 +63,14 @@ int main() {
     server_connection->Seek(connection_acceptor, file_stream_acceptor, on_server_connection);
 
     // Run the server io_context in a separate thread
-    std::thread server_thread([&server_io_context]() {
+    std::thread server_thread1([&server_io_context]() {
         server_io_context.run();
     });
+
+    std::thread server_thread2([&server_io_context]() {
+        server_io_context.run();
+    });
+
 
     // 3. Create Client
     auto client_connection = Connection<BenchmarkPackageType>::Create(client_io_context, client_ssl_context, client_in_deque);
@@ -73,7 +78,7 @@ int main() {
     client_connection->Start(server_address, SSL_CONNECTION_PORT, SSL_FILE_STREAM_PORT, on_client_connection);
 
     // Run the client io_context in a separate thread
-    std::thread client_thread([&client_io_context]() {
+    std::thread client_thread1([&client_io_context]() {
         client_io_context.run();
     });
 
@@ -111,12 +116,6 @@ int main() {
     server_io_context.stop();
     client_io_context.stop();
 
-    if (server_thread.joinable()) {
-        server_thread.join();
-    }
-    if (client_thread.joinable()) {
-        client_thread.join();
-    }
 
     return 0;
 }

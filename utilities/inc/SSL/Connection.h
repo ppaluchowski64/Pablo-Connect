@@ -15,6 +15,7 @@
 #include <asio/ssl/context_base.hpp>
 #include <SSL/Package.h>
 #include <asio/buffer.hpp>
+#include <AwaitableFlag.h>
 #include <UniqueFileNamesGenerator.h>
 
 typedef asio::io_context IOContext;
@@ -27,7 +28,7 @@ typedef asio::ssl::context::method SSLMethod;
 typedef asio::ssl::stream_base SSLStreamBase;
 typedef asio::ip::address IPAddress;
 
-constexpr uint32_t PACKAGES_WARN_THRESHOLD = 100;
+constexpr uint32_t PACKAGES_WARN_THRESHOLD = 10000;
 
 constexpr uint16_t SSL_CONNECTION_PORT = 50000;
 constexpr uint16_t SSL_FILE_STREAM_PORT = 50001;
@@ -53,7 +54,8 @@ template <PackageType T>
 class Connection final : public std::enable_shared_from_this<Connection<T>> {
 public:
     Connection(IOContext& ioContext, const std::shared_ptr<SSLContext>& sslContext, ts::deque<PackageIn<T>>& inDeque)
-    : m_context(ioContext), m_sslContext(sslContext), m_sslSocket(ioContext, *sslContext), m_sslFileStreamSocket(ioContext, *sslContext), m_connectionState(ConnectionState::DISCONNECTED), m_inDeque(inDeque) { }
+    : m_context(ioContext), m_sslContext(sslContext), m_sslSocket(ioContext, *sslContext), m_sslFileStreamSocket(ioContext, *sslContext), m_connectionState(ConnectionState::DISCONNECTED), m_sendMessageFlag(ioContext.get_executor())
+    , m_fileReceiveFlag(ioContext.get_executor()), m_inDeque(inDeque) { }
 
     Connection() = delete;
 
@@ -129,27 +131,15 @@ public:
 
     void Send(std::unique_ptr<Package<T>>&& package) {
         m_outDeque.push_back(std::move(package));
-
-        if (const size_t dequeSize = m_outDeque.size(); dequeSize > PACKAGES_WARN_THRESHOLD) {
-            Debug::LogWarning("Output queue size is growing: " + std::to_string(dequeSize));
-        }
-
-        if (!m_sending) {
-            m_sending = true;
-            SendMessage();
-        }
+        m_sendMessageFlag.Signal();
     }
 
     template <StdLayoutOrVecOrString... Args>
     void Send(T type, PackageFlag flag, Args... args) {
         std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(type, args...);
         package->GetHeader().flags = static_cast<uint8_t>(flag);
-
         m_outDeque.push_back(std::move(package));
-        if (!m_sending) {
-            m_sending = true;
-            SendMessage();
-        }
+        m_sendMessageFlag.Signal();
     }
 
     void Disconnect() {
@@ -185,8 +175,12 @@ private:
                   std::to_string(connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().port()));
 
             connection->m_connectionID = s_currentConnectionID++;
-            connection->ReceiveMessage();
             connection->m_connectionState = ConnectionState::CONNECTED;
+
+            asio::co_spawn(connection->m_context, coReceiveMessage(connection), asio::detached);
+            asio::co_spawn(connection->m_context, coReceiveFile(connection), asio::detached);
+            asio::co_spawn(connection->m_context, coSendMessage(connection), asio::detached);
+
             callback(connection);
 
         } catch (const std::system_error& error) {
@@ -210,8 +204,12 @@ private:
                 std::to_string(connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().port()));
 
             connection->m_connectionID = s_currentConnectionID++;
-            connection->ReceiveMessage();
             connection->m_connectionState = ConnectionState::CONNECTED;
+
+            asio::co_spawn(connection->m_context, coReceiveMessage(connection), asio::detached);
+            asio::co_spawn(connection->m_context, coReceiveFile(connection), asio::detached);
+            asio::co_spawn(connection->m_context, coSendMessage(connection), asio::detached);
+
             callback(connection);
 
         } catch (const std::system_error& error) {
@@ -255,124 +253,98 @@ private:
         connection->m_connectionID    = 0;
     }
 
+    static asio::awaitable<void> coReceiveMessage(std::shared_ptr<Connection<T>> connection) {
+        try {
+            while (connection->m_connectionState == ConnectionState::CONNECTED) {
+                PackageHeader header{};
+                asio::mutable_buffer headerBuffer(&header, sizeof(header));
 
-    void SendMessage() {
-        std::shared_ptr<Connection<T>> connection = this->shared_from_this();
-        m_packageOut = m_outDeque.pop_front();
-        PackageHeader header = m_packageOut->GetHeader();
+                co_await asio::async_read(connection->m_sslSocket, headerBuffer, asio::use_awaitable);
 
-        std::vector<asio::const_buffer> buffers = {
-            asio::buffer(&header, sizeof(PackageHeader)),
-            asio::buffer(m_packageOut->GetRawBody(), header.size)
-        };
+                std::unique_ptr<Package<T>> package = std::make_unique<Package<T>>(header);
+                asio::mutable_buffer packageBuffer(package->GetRawBody(), header.size);
 
-        asio::async_write(m_sslSocket, buffers, [connection](const asio::error_code& errorCode, const size_t) {
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-                connection->Disconnect();
-                return;
-            }
+                co_await asio::async_read(connection->m_sslSocket, packageBuffer, asio::use_awaitable);
 
-            if (connection->m_outDeque.empty()) {
-                connection->m_sending = false;
-                return;
-            }
-
-            connection->SendMessage();
-        });
-    }
-
-    void HandleFullReceive() {
-        PackageHeader header = m_packageIn->GetHeader();
-        std::shared_ptr<Connection<T>> connection = this->shared_from_this();
-        asio::mutable_buffer buffer(m_packageIn->GetRawBody() + m_receivedBytes, header.size);
-
-        asio::async_read(m_sslSocket, buffer, [connection](const asio::error_code& errorCode, const size_t bytes) {
-            if (errorCode) {
-                if (errorCode == asio::error::eof || errorCode == asio::ssl::error::stream_truncated) {
-                    Debug::Log("Connection closed cleanly by peer.");
-                } else {
-                    Debug::LogError(errorCode.message());
+                if ((header.flags & PackageFlag::FILE_RECEIVE_INFO) != 0) {
+                    connection->m_fileInfoDeque.push_back(std::move(package));
+                    connection->m_fileReceiveFlag.Signal();
+                    continue;
                 }
 
-                connection->Disconnect();
-                return;
+                PackageIn<T> packageIn {
+                    std::move(package),
+                    connection
+                };
+
+                connection->m_inDeque.push_back(std::move(packageIn));
+            }
+        } catch (const std::system_error& error) {
+            if (error.code() == asio::error::eof || error.code() == asio::ssl::error::stream_truncated) {
+                Debug::Log("Connection closed cleanly by peer.");
+            } else {
+                Debug::LogError(error.what());
             }
 
-            PackageIn<T> package;
-            package.package = std::move(connection->m_packageIn);
-            package.connection = connection;
-
-            connection->m_inDeque.push_back(std::move(package));
-            connection->ReceiveMessage();
-        });
-    }
-
-    void HandleFileReceive() {
-        PackageHeader header = m_packageIn->GetHeader();
-        std::shared_ptr<Connection<T>> connection = this->shared_from_this();
-        PackageSizeInt bytesLeft = header.size;
-        std::string filename;
-
-        if ((header.flags & PackageFlag::FILE_NAME_INCLUDED) == 0) {
-            filename = UniqueFileNamesGenerator::GetUniqueName();
-        } else {
-            PackageSizeInt nameSize;
-            asio::mutable_buffer sizeBuffer(&nameSize, sizeof(PackageSizeInt));
-            asio::read(m_sslSocket, sizeBuffer);
-
-            if (nameSize > MAX_FILE_NAME_SIZE) {
-                Debug::LogError("File name too long");
-                Disconnect();
-                return;
-            }
-
-            filename.resize(nameSize);
-            asio::mutable_buffer nameBuffer(filename.data(), nameSize);
-            asio::read(m_sslSocket, nameBuffer);
-
-            bytesLeft -= sizeof(PackageSizeInt);
-            bytesLeft -= nameSize;
-        }
-
-        while (bytesLeft > 0) {
-            PackageSizeInt bufferSize = std::min(bytesLeft, FILE_BUFFER_SIZE);
-            std::unique_ptr<char[]> rawBuffer = std::make_unique<char[]>(bufferSize);
-            asio::mutable_buffer buffer(rawBuffer.get(), bufferSize);
-
-            asio::read(m_sslSocket, buffer);
-
+            connection->Disconnect();
+            co_return;
         }
     }
 
-    void ReceiveMessage() {
-        std::shared_ptr<Connection<T>> connection = this->shared_from_this();
-        m_packageIn = std::make_unique<Package<T>>(PackageHeader());
-        m_receivedBytes = 0;
-        asio::mutable_buffer headerBuf(&m_packageIn->GetHeader(), sizeof(PackageHeader));
+    static asio::awaitable<void> coReceiveFile(std::shared_ptr<Connection<T>> connection) {
+        try {
+            while (connection->m_connectionState == ConnectionState::CONNECTED) {
+                co_await connection->m_fileReceiveFlag.Wait();
 
-        asio::async_read(m_sslSocket, headerBuf, [connection](const asio::error_code& errorCode, const size_t) {
-            if (errorCode) {
-                if (errorCode == asio::error::eof || errorCode == asio::ssl::error::stream_truncated) {
-                    Debug::Log("Connection closed cleanly by peer.");
-                } else {
-                    Debug::LogError(errorCode.message());
+                while (!connection->m_fileInfoDeque.empty()) {
+                    std::unique_ptr<Package<T>> package = connection->m_fileInfoDeque.pop_front();
+
+                    std::string filename;
+                    if ((package->GetHeader().flags & PackageFlag::FILE_NAME_INCLUDED) != 0) {
+                        package->GetValue(filename);
+                    } else {
+                        filename = UniqueFileNamesGenerator::GetUniqueName();
+                    }
                 }
 
-                connection->Disconnect();
-                return;
+                connection->m_fileReceiveFlag.Reset();
+            }
+        } catch (const std::system_error& error) {
+            if (error.code() == asio::error::eof || error.code() == asio::ssl::error::stream_truncated) {
+                Debug::Log("Connection closed cleanly by peer.");
+            } else {
+                Debug::LogError(error.what());
             }
 
-            PackageHeader header = connection->m_packageIn->GetHeader();
-            connection->m_packageIn = std::make_unique<Package<T>>(header);
+            connection->Disconnect();
+            co_return;
+        }
+    }
 
-            if ((header.flags & PackageFlag::FILE) != 0) {
-                connection->HandleFileReceive();
-                return;
+    static asio::awaitable<void> coSendMessage(std::shared_ptr<Connection<T>> connection) {
+        try {
+            while (connection->m_connectionState == ConnectionState::CONNECTED) {
+                co_await connection->m_sendMessageFlag.Wait();
+
+                while (!connection->m_outDeque.empty()) {
+                    std::unique_ptr<Package<T>> package = connection->m_outDeque.pop_front();
+                    PackageHeader header = package->GetHeader();
+
+                    std::vector<asio::const_buffer> buffers = {
+                        asio::const_buffer(&header, sizeof(header)),
+                        asio::const_buffer(package->GetRawBody(), header.size)
+                    };
+
+                    co_await asio::async_write(connection->m_sslSocket, buffers, asio::use_awaitable);
+                }
+
+                connection->m_sendMessageFlag.Reset();
             }
-
-            connection->HandleFullReceive();
-        });
+        } catch (const std::system_error& error) {
+            Debug::LogError(error.what());
+            connection->Disconnect();
+            co_return;
+        }
     }
 
     IOContext&                  m_context;
@@ -381,8 +353,8 @@ private:
     SSLSocket                   m_sslFileStreamSocket;
     ConnectionState             m_connectionState;
     uint16_t                    m_connectionID{};
-    uint32_t                    m_receivedBytes{0};
-    bool                        m_sending{false};
+    AwaitableFlag               m_sendMessageFlag;
+    AwaitableFlag               m_fileReceiveFlag;
     std::unique_ptr<Package<T>> m_packageOut;
     std::unique_ptr<Package<T>> m_packageIn;
 
@@ -390,9 +362,7 @@ private:
     ts::deque<std::unique_ptr<Package<T>>> m_outDeque;
     ts::deque<PackageIn<T>>&               m_inDeque;
 
-    static uint16_t                 s_currentConnectionID;
-    static UniqueFileNamesGenerator s_fileNamesGenerator;
-    static std::once_flag           s_onceFlag;
+    static uint16_t s_currentConnectionID;
 };
 
 template <PackageType T>
