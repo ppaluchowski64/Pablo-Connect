@@ -1,121 +1,163 @@
 #include <iostream>
 #include <chrono>
+#include <fstream>
 #include <thread>
+#include <vector>
+#include <iomanip>
+#include <future>
 #include <atomic>
-#include <SSL/CertificateManager.h>
 #include <SSL/Connection.h>
+#include <SSL/CertificateManager.h>
 
-// Define a simple package type for the benchmark
+// Define a simple package enum for the benchmark
 enum class BenchmarkPackageType : uint16_t {
-    BENCHMARK_PACKET,
+    FileTransfer
 };
 
-// Global atomic counter for received packets
-std::atomic<uint64_t> g_packetsReceived = 0;
-// Global flag to stop the benchmark
-std::atomic<bool> g_stopBenchmark = false;
+// Generates a test file of an exact size in bytes
+void GenerateTestFile(const std::filesystem::path& path, size_t size_in_bytes) {
+    std::ofstream ofs(path, std::ios::binary | std::ios::out);
+    if (!ofs) {
+        std::cerr << "Failed to open file for writing: " << path << std::endl;
+        return;
+    }
 
-// Server's callback when a client connects
-void on_server_connection(std::shared_ptr<Connection<BenchmarkPackageType>> connection) {
-    std::cout << "Client connected with ID: " << connection->GetConnectionID() << std::endl;
+    // Write in chunks for larger files
+    if (size_in_bytes > 0) {
+        size_t remaining = size_in_bytes;
+        const size_t chunk_size = 1024 * 1024; // 1MB
+        std::vector<char> buffer(chunk_size, 0);
+
+        while (remaining > 0) {
+            size_t to_write = std::min(remaining, chunk_size);
+            ofs.write(buffer.data(), to_write);
+            remaining -= to_write;
+        }
+    }
 }
 
-// Client's callback when connected to the server
-void on_client_connection(std::shared_ptr<Connection<BenchmarkPackageType>> connection) {
-    std::cout << "Connected to server with ID: " << connection->GetConnectionID() << std::endl;
-    // Start sending packets
-    std::thread sender_thread([connection]() {
-        while (!g_stopBenchmark) {
-            // Send a simple packet with no payload
-            connection->Send(BenchmarkPackageType::BENCHMARK_PACKET, PackageFlag::NONE);
-        }
-    });
-    sender_thread.detach();
+// Helper function to format file sizes for printing
+std::string FormatSize(size_t bytes) {
+    std::stringstream ss;
+    if (bytes < 1024) {
+        ss << bytes << " B";
+    } else if (bytes < 1024 * 1024) {
+        ss << std::fixed << std::setprecision(2) << (bytes / 1024.0) << " KB";
+    } else if (bytes < 1024 * 1024 * 1024) {
+        ss << std::fixed << std::setprecision(2) << (bytes / (1024.0 * 1024.0)) << " MB";
+    } else {
+        ss << std::fixed << std::setprecision(2) << (bytes / (1024.0 * 1024.0 * 1024.0)) << " GB";
+    }
+    return ss.str();
 }
 
 int main() {
-    // 1. Setup
-    const std::filesystem::path certPath = "./certs";
-    const int benchmark_duration_seconds = 10;
+    const std::string certPath = "certs";
+    const std::string testFilename = "test_file.bin";
+    const std::string receivedFilename = "received_test_file.bin";
 
-    // Generate certificates if they don't exist or are invalid
-    if (!CertificateManager::IsCertificateValid(certPath)) {
-        std::cout << "Generating new SSL certificates..." << std::endl;
-        CertificateManager::GenerateCertificate(certPath);
-    }
+    // --- Generate SSL certificate ---
+    std::filesystem::create_directory(certPath);
+    CertificateManager::GenerateCertificate(certPath);
 
-    // Create IO contexts for server and client
-    asio::io_context server_io_context;
-    asio::io_context client_io_context;
+    // --- Setup a single ASIO context and connections ---
+    asio::io_context ioContext;
+    ts::deque<PackageIn<BenchmarkPackageType>> serverInDeque, clientInDeque;
+    auto serverSSLContext = Connection<BenchmarkPackageType>::CreateSSLContext(certPath, true);
+    auto clientSSLContext = Connection<BenchmarkPackageType>::CreateSSLContext(certPath, false);
 
-    // Create SSL contexts
-    auto server_ssl_context = Connection<BenchmarkPackageType>::CreateSSLContext(certPath, true);
-    auto client_ssl_context = Connection<BenchmarkPackageType>::CreateSSLContext(certPath, false);
+    Acceptor connectionAcceptor(ioContext, Endpoint(asio::ip::tcp::v4(), SSL_CONNECTION_PORT));
+    Acceptor fileStreamAcceptor(ioContext, Endpoint(asio::ip::tcp::v4(), SSL_FILE_STREAM_PORT));
 
-    // Create thread-safe deques for incoming packages
-    ts::deque<PackageIn<BenchmarkPackageType>> server_in_deque;
-    ts::deque<PackageIn<BenchmarkPackageType>> client_in_deque; // Not used in this benchmark
+    // Promises to ensure connections are established before testing
+    std::promise<std::shared_ptr<Connection<BenchmarkPackageType>>> serverPromise;
+    std::promise<std::shared_ptr<Connection<BenchmarkPackageType>>> clientPromise;
+    auto serverFuture = serverPromise.get_future();
+    auto clientFuture = clientPromise.get_future();
 
-    // 2. Create Server
-    auto server_connection = Connection<BenchmarkPackageType>::Create(server_io_context, server_ssl_context, server_in_deque);
-    Acceptor connection_acceptor(server_io_context, Endpoint(asio::ip::tcp::v4(), SSL_CONNECTION_PORT));
-    Acceptor file_stream_acceptor(server_io_context, Endpoint(asio::ip::tcp::v4(), SSL_FILE_STREAM_PORT));
-    server_connection->Seek(connection_acceptor, file_stream_acceptor, on_server_connection);
-
-    // Run the server io_context in a separate thread
-    std::thread server_thread1([&server_io_context]() {
-        server_io_context.run();
+    // Create and run the server
+    auto serverConn = Connection<BenchmarkPackageType>::Create(ioContext, serverSSLContext, serverInDeque);
+    serverConn->Seek(connectionAcceptor, fileStreamAcceptor, [&](auto conn) {
+        serverPromise.set_value(conn);
     });
 
-    std::thread server_thread2([&server_io_context]() {
-        server_io_context.run();
-    });
-
-
-    // 3. Create Client
-    auto client_connection = Connection<BenchmarkPackageType>::Create(client_io_context, client_ssl_context, client_in_deque);
-    IPAddress server_address = asio::ip::make_address("127.0.0.1");
-    client_connection->Start(server_address, SSL_CONNECTION_PORT, SSL_FILE_STREAM_PORT, on_client_connection);
-
-    // Run the client io_context in a separate thread
-    std::thread client_thread1([&client_io_context]() {
-        client_io_context.run();
-    });
-
-    // 4. Run Benchmark
-    std::cout << "Starting benchmark for " << benchmark_duration_seconds << " seconds..." << std::endl;
-
-    auto start_time = std::chrono::high_resolution_clock::now();
-    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start_time).count() < benchmark_duration_seconds) {
-        // Pop and count packets on the server side
-        if (!server_in_deque.empty()) {
-            server_in_deque.pop_front();
-            g_packetsReceived++;
+    // Create and run the client
+    auto clientConn = Connection<BenchmarkPackageType>::Create(ioContext, clientSSLContext, clientInDeque);
+    clientConn->Start(
+        Endpoint(asio::ip::make_address_v4("127.0.0.1"), SSL_CONNECTION_PORT),
+        Endpoint(asio::ip::make_address_v4("127.0.0.1"), SSL_FILE_STREAM_PORT),
+        [&](auto conn) {
+            clientPromise.set_value(conn);
         }
+    );
+
+    // Run the IO context in a background thread
+    std::thread asioThread([&]() { ioContext.run(); });
+
+    // Wait for both client and server to confirm connection
+    std::cout << "Waiting for client-server connection..." << std::endl;
+    auto server = serverFuture.get();
+    auto client = clientFuture.get();
+    std::cout << "Connection established. Starting benchmark." << std::endl;
+
+    // --- Define the file sizes for the benchmark ---
+    std::vector<size_t> test_sizes;
+    const size_t max_size = 2ULL * 1024 * 1024 * 1024; // 2 GB
+    for (size_t size = 1; size <= max_size; size *= 2) {
+        test_sizes.push_back(size);
     }
-    g_stopBenchmark = true;
 
-    while (!server_in_deque.empty()) {
-        server_in_deque.pop_front();
-        g_packetsReceived++;
+    // --- Print table header ---
+    std::cout << "\n+-----------------+-----------------+--------------------+" << std::endl;
+    std::cout << "| File Size       | Transfer Time   | Speed (MB/s)       |" << std::endl;
+    std::cout << "+-----------------+-----------------+--------------------+" << std::endl;
+
+    // --- Run benchmark for each file size on the SAME connection ---
+    for (const auto& size : test_sizes) {
+        GenerateTestFile(testFilename, size);
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        // Request the file
+        client->RequestFile(testFilename, receivedFilename);
+
+        // Wait for the received file to match the source size
+        while (true) {
+            std::error_code ec;
+            if (std::filesystem::exists(receivedFilename, ec) && !ec) {
+                if (std::filesystem::file_size(receivedFilename, ec) == size && !ec) {
+                    break; // Transfer is complete
+                }
+            }
+            // Don't poll too aggressively
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end - start;
+
+        // --- Calculate and Print Results ---
+        double speed_mb_s = (elapsed.count() > 0) ? (static_cast<double>(size) / (1024 * 1024)) / elapsed.count() : 0;
+
+        std::cout << "| " << std::left << std::setw(15) << FormatSize(size)
+                  << "| " << std::left << std::setw(15) << std::fixed << std::setprecision(4) << elapsed.count() << " s"
+                  << "| " << std::left << std::setw(18) << std::fixed << std::setprecision(2) << speed_mb_s << " |" << std::endl;
+
+        // Cleanup files for the next run
+        std::filesystem::remove(testFilename);
+        std::filesystem::remove(receivedFilename);
     }
 
-    // 5. Results
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    std::cout << "+-----------------+-----------------+--------------------+" << std::endl;
 
-    std::cout << "Benchmark finished." << std::endl;
-    std::cout << "Total packets received: " << g_packetsReceived << std::endl;
-    std::cout << "Total time: " << duration / 1000.0 << " seconds" << std::endl;
-    std::cout << "Packets per second: " << (g_packetsReceived * 1000.0) / duration << std::endl;
+    // --- Final Cleanup ---
+    std::cout << "\nBenchmark finished. Disconnecting." << std::endl;
+    client->Disconnect();
+    server->Disconnect();
+    ioContext.stop();
+    asioThread.join();
 
-    // 6. Cleanup
-    client_connection->Disconnect();
-    server_connection->Disconnect();
-
-    server_io_context.stop();
-    client_io_context.stop();
-
+    std::filesystem::remove_all(certPath);
 
     return 0;
 }

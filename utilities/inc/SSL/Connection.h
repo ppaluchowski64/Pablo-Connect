@@ -142,6 +142,13 @@ public:
         m_sendMessageFlag.Signal();
     }
 
+    void RequestFile(const std::string& path, const std::string& filename) {
+        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(static_cast<T>(0), filename, path);
+        package->GetHeader().flags = static_cast<uint8_t>(PackageFlag::FILE_REQUEST);
+        m_outDeque.push_back(std::move(package));
+        m_sendMessageFlag.Signal();
+    }
+
     void Disconnect() {
         if (!m_sslSocket.lowest_layer().is_open() && !m_sslFileStreamSocket.lowest_layer().is_open()) {
             m_connectionState = ConnectionState::DISCONNECTED;
@@ -179,6 +186,7 @@ private:
 
             asio::co_spawn(connection->m_context, coReceiveMessage(connection), asio::detached);
             asio::co_spawn(connection->m_context, coReceiveFile(connection), asio::detached);
+            asio::co_spawn(connection->m_context, coSendFile(connection), asio::detached);
             asio::co_spawn(connection->m_context, coSendMessage(connection), asio::detached);
 
             callback(connection);
@@ -208,6 +216,7 @@ private:
 
             asio::co_spawn(connection->m_context, coReceiveMessage(connection), asio::detached);
             asio::co_spawn(connection->m_context, coReceiveFile(connection), asio::detached);
+            asio::co_spawn(connection->m_context, coSendFile(connection), asio::detached);
             asio::co_spawn(connection->m_context, coSendMessage(connection), asio::detached);
 
             callback(connection);
@@ -276,6 +285,11 @@ private:
                     continue;
                 }
 
+                if ((header.flags & PackageFlag::FILE_REQUEST) != 0) {
+                    connection->m_fileRequestDeque.push_back(std::move(package));
+                    connection->m_sendFileFlag.Signal();
+                }
+
                 PackageIn<T> packageIn {
                     std::move(package),
                     connection
@@ -298,6 +312,7 @@ private:
     static asio::awaitable<void> coReceiveFile(std::shared_ptr<Connection<T>> connection) {
         try {
             if (connection->m_connectionState != ConnectionState::CONNECTED) co_return;
+            std::vector<char> dataBuffer(FILE_BUFFER_SIZE);
             co_await connection->m_fileReceiveFlag.Wait();
 
             while (connection->m_connectionState == ConnectionState::CONNECTED) {
@@ -305,11 +320,33 @@ private:
                     std::unique_ptr<Package<T>> package = connection->m_fileInfoDeque.pop_front();
 
                     std::string filename;
+                    PackageSizeInt size;
+
                     if ((package->GetHeader().flags & PackageFlag::FILE_NAME_INCLUDED) != 0) {
                         package->GetValue(filename);
                     } else {
                         filename = UniqueFileNamesGenerator::GetUniqueName();
                     }
+
+                    package->GetValue(size);
+                    std::ofstream fileStream(UniqueFileNamesGenerator::GetFilePath() / filename, std::ios::binary | std::ios::trunc);
+
+                    if (!fileStream.is_open()) {
+                        Debug::LogError("Could not open file");
+                        connection->Disconnect();
+                        co_return;
+                    }
+
+                    while (size > 0) {
+                        const PackageSizeInt readSize = std::min(size, FILE_BUFFER_SIZE);
+                        size -= readSize;
+
+                        asio::mutable_buffer buffer(dataBuffer.data(), readSize);
+                        co_await asio::async_read(connection->m_sslFileStreamSocket, buffer, asio::use_awaitable);
+                        fileStream.write(dataBuffer.data(), readSize);
+                    }
+
+                    fileStream.close();
                 }
 
                 connection->m_fileReceiveFlag.Reset();
@@ -330,7 +367,7 @@ private:
     static asio::awaitable<void> coSendMessage(std::shared_ptr<Connection<T>> connection) {
         try {
             if (connection->m_connectionState != ConnectionState::CONNECTED) co_return;
-            co_await connection->sendMessageFlag.Wait();
+            co_await connection->m_sendMessageFlag.Wait();
 
             while (connection->m_connectionState == ConnectionState::CONNECTED) {
                 while (!connection->m_outDeque.empty()) {
@@ -359,7 +396,7 @@ private:
         try {
             if (connection->m_connectionState != ConnectionState::CONNECTED) co_return;
             std::vector<char> fileBuffer(FILE_BUFFER_SIZE);
-            co_await connection->m_fileSendFlag.Wait();
+            co_await connection->m_sendFileFlag.Wait();
 
             while (connection->m_connectionState == ConnectionState::CONNECTED) {
                 while (!connection->m_fileRequestDeque.empty()) {
@@ -372,7 +409,6 @@ private:
                     package->GetValue(path);
 
                     std::filesystem::path filePath(path);
-                    filePath /= filename;
 
                     if (!std::filesystem::exists(filePath)) {
                         Debug::LogError("File path doesnt exist");
@@ -383,7 +419,7 @@ private:
                     PackageSizeInt size = std::filesystem::file_size(filePath);
 
                     {
-                        std::unique_ptr<Package<T>> fileInfo = Package<T>::CreateUnique(0, filename, size);
+                        std::unique_ptr<Package<T>> fileInfo = Package<T>::CreateUnique(static_cast<T>(0), filename, size);
                         fileInfo->GetHeader().flags = PackageFlag::FILE_NAME_INCLUDED | PackageFlag::FILE_RECEIVE_INFO;
                         connection->Send(std::move(fileInfo));
                     }
@@ -396,18 +432,22 @@ private:
                         co_return;
                     }
 
+                    const PackageSizeInt fullSize = size;
+
                     while (size > 0) {
                         const PackageSizeInt readSize = std::min(size, FILE_BUFFER_SIZE);
                         size -= readSize;
                         fileStream.read(fileBuffer.data(), readSize);
 
-                        asio::mutable_buffer buffer(fileBuffer.data(), readSize);
-                        co_await asio::async_write(connection->m_sslSocket, buffer, asio::use_awaitable);
+                        asio::const_buffer buffer(fileBuffer.data(), readSize);
+                        co_await asio::async_write(connection->m_sslFileStreamSocket, buffer, asio::use_awaitable);
                     }
+
+                    fileStream.close();
                 }
 
-                connection->m_fileSendFlag.Reset();
-                co_await connection->m_fileSendFlag.Wait();
+                connection->m_sendFileFlag.Reset();
+                co_await connection->m_sendFileFlag.Wait();
             }
         } catch (const std::system_error& error) {
             Debug::LogError(error.what());
