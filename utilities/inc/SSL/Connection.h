@@ -55,7 +55,7 @@ class Connection final : public std::enable_shared_from_this<Connection<T>> {
 public:
     Connection(IOContext& ioContext, const std::shared_ptr<SSLContext>& sslContext, ts::deque<PackageIn<T>>& inDeque)
     : m_context(ioContext), m_sslContext(sslContext), m_sslSocket(ioContext, *sslContext), m_sslFileStreamSocket(ioContext, *sslContext), m_connectionState(ConnectionState::DISCONNECTED), m_sendMessageFlag(ioContext.get_executor())
-    , m_fileReceiveFlag(ioContext.get_executor()), m_inDeque(inDeque) { }
+    , m_sendFileFlag(ioContext.get_executor()), m_fileReceiveFlag(ioContext.get_executor()), m_inDeque(inDeque) { }
 
     Connection() = delete;
 
@@ -251,6 +251,10 @@ private:
 
         connection->m_connectionState = ConnectionState::DISCONNECTED;
         connection->m_connectionID    = 0;
+
+        connection->m_fileReceiveFlag.Signal();
+        connection->m_sendMessageFlag.Signal();
+        connection->m_sendFileFlag.Signal();
     }
 
     static asio::awaitable<void> coReceiveMessage(std::shared_ptr<Connection<T>> connection) {
@@ -293,9 +297,10 @@ private:
 
     static asio::awaitable<void> coReceiveFile(std::shared_ptr<Connection<T>> connection) {
         try {
-            while (connection->m_connectionState == ConnectionState::CONNECTED) {
-                co_await connection->m_fileReceiveFlag.Wait();
+            if (connection->m_connectionState != ConnectionState::CONNECTED) co_return;
+            co_await connection->m_fileReceiveFlag.Wait();
 
+            while (connection->m_connectionState == ConnectionState::CONNECTED) {
                 while (!connection->m_fileInfoDeque.empty()) {
                     std::unique_ptr<Package<T>> package = connection->m_fileInfoDeque.pop_front();
 
@@ -308,6 +313,7 @@ private:
                 }
 
                 connection->m_fileReceiveFlag.Reset();
+                co_await connection->m_fileReceiveFlag.Wait();
             }
         } catch (const std::system_error& error) {
             if (error.code() == asio::error::eof || error.code() == asio::ssl::error::stream_truncated) {
@@ -323,9 +329,10 @@ private:
 
     static asio::awaitable<void> coSendMessage(std::shared_ptr<Connection<T>> connection) {
         try {
-            while (connection->m_connectionState == ConnectionState::CONNECTED) {
-                co_await connection->m_sendMessageFlag.Wait();
+            if (connection->m_connectionState != ConnectionState::CONNECTED) co_return;
+            co_await connection->sendMessageFlag.Wait();
 
+            while (connection->m_connectionState == ConnectionState::CONNECTED) {
                 while (!connection->m_outDeque.empty()) {
                     std::unique_ptr<Package<T>> package = connection->m_outDeque.pop_front();
                     PackageHeader header = package->GetHeader();
@@ -339,6 +346,68 @@ private:
                 }
 
                 connection->m_sendMessageFlag.Reset();
+                co_await connection->m_sendMessageFlag.Wait();
+            }
+        } catch (const std::system_error& error) {
+            Debug::LogError(error.what());
+            connection->Disconnect();
+            co_return;
+        }
+    }
+
+    static asio::awaitable<void> coSendFile(std::shared_ptr<Connection<T>> connection) {
+        try {
+            if (connection->m_connectionState != ConnectionState::CONNECTED) co_return;
+            std::vector<char> fileBuffer(FILE_BUFFER_SIZE);
+            co_await connection->m_fileSendFlag.Wait();
+
+            while (connection->m_connectionState == ConnectionState::CONNECTED) {
+                while (!connection->m_fileRequestDeque.empty()) {
+                    std::unique_ptr<Package<T>> package = connection->m_fileRequestDeque.pop_front();
+
+                    std::string filename;
+                    std::string path;
+
+                    package->GetValue(filename);
+                    package->GetValue(path);
+
+                    std::filesystem::path filePath(path);
+                    filePath /= filename;
+
+                    if (!std::filesystem::exists(filePath)) {
+                        Debug::LogError("File path doesnt exist");
+                        connection->Disconnect();
+                        co_return;
+                    }
+
+                    PackageSizeInt size = std::filesystem::file_size(filePath);
+
+                    {
+                        std::unique_ptr<Package<T>> fileInfo = Package<T>::CreateUnique(0, filename, size);
+                        fileInfo->GetHeader().flags = PackageFlag::FILE_NAME_INCLUDED | PackageFlag::FILE_RECEIVE_INFO;
+                        connection->Send(std::move(fileInfo));
+                    }
+
+                    std::ifstream fileStream(filePath, std::ios::binary | std::ios::in);
+
+                    if (!fileStream.is_open()) {
+                        Debug::LogError("Could not open file");
+                        connection->Disconnect();
+                        co_return;
+                    }
+
+                    while (size > 0) {
+                        const PackageSizeInt readSize = std::min(size, FILE_BUFFER_SIZE);
+                        size -= readSize;
+                        fileStream.read(fileBuffer.data(), readSize);
+
+                        asio::mutable_buffer buffer(fileBuffer.data(), readSize);
+                        co_await asio::async_write(connection->m_sslSocket, buffer, asio::use_awaitable);
+                    }
+                }
+
+                connection->m_fileSendFlag.Reset();
+                co_await connection->m_fileSendFlag.Wait();
             }
         } catch (const std::system_error& error) {
             Debug::LogError(error.what());
@@ -354,11 +423,11 @@ private:
     ConnectionState             m_connectionState;
     uint16_t                    m_connectionID{};
     AwaitableFlag               m_sendMessageFlag;
+    AwaitableFlag               m_sendFileFlag;
     AwaitableFlag               m_fileReceiveFlag;
-    std::unique_ptr<Package<T>> m_packageOut;
-    std::unique_ptr<Package<T>> m_packageIn;
 
     ts::deque<std::unique_ptr<Package<T>>> m_fileInfoDeque;
+    ts::deque<std::unique_ptr<Package<T>>> m_fileRequestDeque;
     ts::deque<std::unique_ptr<Package<T>>> m_outDeque;
     ts::deque<PackageIn<T>>&               m_inDeque;
 

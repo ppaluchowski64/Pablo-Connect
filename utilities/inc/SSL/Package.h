@@ -61,6 +61,10 @@ inline uint8_t operator|(PackageFlag l, uint8_t r) {
     return static_cast<uint8_t>(l) | r;
 }
 
+inline uint8_t operator|(PackageFlag l, PackageFlag r) {
+    return static_cast<uint8_t>(l) | static_cast<uint8_t>(r);
+}
+
 struct PackageHeader {
     PackageTypeInt type;
     PackageSizeInt size;
