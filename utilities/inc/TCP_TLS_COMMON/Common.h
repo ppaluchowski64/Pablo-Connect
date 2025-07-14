@@ -55,5 +55,6 @@ enum class ConnectionState : uint8_t {
     DISCONNECTING
 };
 
+using ConnectionCallback = void(*)();
 
 #endif //TCP_TLS_COMMON_H

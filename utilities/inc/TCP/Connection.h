@@ -35,7 +35,7 @@ namespace TCP {
             return std::make_shared<Connection<T>>(ioContext, inDeque);
         }
 
-        void Seek(TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        void Seek(TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, const ConnectionCallback callback) {
             if (m_connectionState != ConnectionState::DISCONNECTED) {
                 Debug::LogError("Connection already started");
                 return;
@@ -45,7 +45,7 @@ namespace TCP {
             asio::co_spawn(m_context, coSeek(connection, connectionAcceptor, fileStreamAcceptor, callback), asio::detached);
         }
 
-        void Start(const TCPEndpoint& connectionEndpoint, const TCPEndpoint& fileStreamEndpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        void Start(const TCPEndpoint& connectionEndpoint, const TCPEndpoint& fileStreamEndpoint, const ConnectionCallback callback) {
             if (m_connectionState != ConnectionState::DISCONNECTED) {
                 Debug::LogError("Connection already started");
                 return;
@@ -55,7 +55,7 @@ namespace TCP {
             asio::co_spawn(m_context, coStart(connection, connectionEndpoint, fileStreamEndpoint, callback), asio::detached);
         }
 
-        void Start(const IPAddress& address, const uint16_t connectionPort, const uint16_t fileStreamPort, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        void Start(const IPAddress& address, const uint16_t connectionPort, const uint16_t fileStreamPort, const ConnectionCallback callback) {
             if (m_connectionState != ConnectionState::DISCONNECTED) {
                 Debug::LogError("Connection already started");
                 return;
@@ -133,7 +133,7 @@ namespace TCP {
         }
 
     private:
-        static asio::awaitable<void> coStart(std::shared_ptr<Connection<T>> connection, const TCPEndpoint connectionEndpoint, const TCPEndpoint fileStreamEndpoint, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        static asio::awaitable<void> coStart(std::shared_ptr<Connection<T>> connection, const TCPEndpoint connectionEndpoint, const TCPEndpoint fileStreamEndpoint, const ConnectionCallback callback) {
             try {
                 connection->m_connectionState = ConnectionState::CONNECTING;
                 std::initializer_list<TCPEndpoint> connectionEndpoints({connectionEndpoint});
@@ -156,7 +156,7 @@ namespace TCP {
                 asio::co_spawn(connection->m_context, coSendFile(connection), asio::detached);
                 asio::co_spawn(connection->m_context, coSendMessage(connection), asio::detached);
 
-                callback(connection);
+                callback();
 
             } catch (const std::system_error& error) {
                 Debug::LogError(error.what());
@@ -164,7 +164,7 @@ namespace TCP {
             }
         }
 
-        static asio::awaitable<void> coSeek(std::shared_ptr<Connection<T>> connection, TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, std::function<void(std::shared_ptr<Connection<T>>)> callback) {
+        static asio::awaitable<void> coSeek(std::shared_ptr<Connection<T>> connection, TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, const ConnectionCallback callback) {
             try {
                 connection->m_connectionState = ConnectionState::CONNECTING;
                 co_await connectionAcceptor.async_accept(connection->m_socket, asio::use_awaitable);
@@ -184,7 +184,7 @@ namespace TCP {
                 asio::co_spawn(connection->m_context, coSendFile(connection), asio::detached);
                 asio::co_spawn(connection->m_context, coSendMessage(connection), asio::detached);
 
-                callback(connection);
+                callback();
 
             } catch (const std::system_error& error) {
                 Debug::LogError(error.what());
