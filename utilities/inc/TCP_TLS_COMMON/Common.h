@@ -4,6 +4,8 @@
 #include <type_traits>
 #include <string>
 #include <vector>
+#include <asio.hpp>
+#include <asio/ssl.hpp>
 
 typedef uint32_t PackageSizeInt;
 typedef uint16_t PackageTypeInt;
@@ -45,5 +47,13 @@ concept StdLayoutOrVecOrString =
     std::is_standard_layout_v<T> ||
     is_std_layout_vector<T>::value ||
     std::is_same_v<T, std::string>;
+
+enum class ConnectionState : uint8_t {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    DISCONNECTING
+};
+
 
 #endif //TCP_TLS_COMMON_H

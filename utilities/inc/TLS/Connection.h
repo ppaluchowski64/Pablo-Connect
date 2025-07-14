@@ -30,13 +30,6 @@ namespace TLS {
         std::shared_ptr<Connection<T>> connection;
     };
 
-    enum class ConnectionState : uint8_t {
-        DISCONNECTED,
-        CONNECTING,
-        CONNECTED,
-        DISCONNECTING
-    };
-
     template <PackageType T>
     class Connection final : public std::enable_shared_from_this<Connection<T>> {
     public:
@@ -45,10 +38,6 @@ namespace TLS {
         , m_sendFileFlag(ioContext.get_executor()), m_fileReceiveFlag(ioContext.get_executor()), m_inDeque(inDeque) { }
 
         Connection() = delete;
-
-        ~Connection() {
-            Disconnect();
-        }
 
         NO_DISCARD static std::shared_ptr<SSLContext> CreateSSLContext(const std::filesystem::path& path, const bool isServer) {
             std::shared_ptr<SSLContext> ctx = std::make_shared<SSLContext>(isServer ? SSLContext::tlsv13_server : SSLContext::tlsv13_client);
