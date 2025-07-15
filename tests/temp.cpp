@@ -3,19 +3,6 @@
 
 
 
-class Temp {
-public:
-    int num;
-    void tempFunction() const {
-        std::cout << "Temp function " << num << std::endl;
-    }
-};
-
-void callbackFunction(void* data) {
-    Temp* ptr = static_cast<Temp*>(data);
-    ptr->tempFunction();
-}
-
 int main() {
     try {
         const IPAddress ip = asio::ip::make_address_v4("127.0.0.1");

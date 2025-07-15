@@ -58,8 +58,8 @@ enum class ConnectionState : uint8_t {
 using ConnectionCallback = void(*)(void*);
 
 struct ConnectionCallbackData {
-    ConnectionCallback callback;
-    void* data;
+    ConnectionCallback callback; // If it's nullptr, then callback is ignored
+    void* data;                  // Can be nullptr
 };
 
 #endif //TCP_TLS_COMMON_H

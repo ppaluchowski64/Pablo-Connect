@@ -2,6 +2,7 @@
 # To keep your changes, remove these comment lines, but the plugin won't be able to modify your requirements
 
 requirements:
+  - "qt/6.8.3"
   - "boost/1.87.0"
   - "openssl/3.5.0"
   - "asio/1.34.2"
