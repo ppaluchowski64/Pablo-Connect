@@ -38,7 +38,7 @@ namespace P2P {
         Client(ClientRole role, const IPAddress& address, uint16_t serverPort, uint16_t fileStreamPort);
         ~Client();
 
-        void Connect();
+        void Connect(ConnectionCallbackData callbackData = {nullptr, nullptr});
         NO_DISCARD constexpr ClientMode GetClientMode() const;
         void SetClientMode(ClientMode mode);
         NO_DISCARD constexpr ConnectionMode GetConnectionMode() const;
@@ -47,10 +47,14 @@ namespace P2P {
 
 
     private:
+        constexpr static void DefaultCallback() {}
         void CreateTLSConnection();
         void CreateTCPConnection();
-        void ConnectTCP();
-        void ConnectTLS();
+        void ConnectTCP(ConnectionCallbackData callbackData);
+        void ConnectTLS(ConnectionCallbackData callbackData);
+
+        void EnableAcceptors();
+        void DisableAcceptors();
 
         IOContext                   m_context;
         std::shared_ptr<SSLContext> m_sslContext{nullptr};

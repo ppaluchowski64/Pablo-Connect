@@ -1,39 +1,18 @@
 #include <P2P/Client.h>
 #include <iostream>
 
-void cc() {
-
-}
 
 namespace P2P {
-    void Client::Connect() {
-        if (m_clientRole == ClientRole::Server) {
-            m_connectionAcceptor.open(asio::ip::tcp::v4());
-            m_connectionAcceptor.set_option(asio::socket_base::reuse_address(true));
-            m_connectionAcceptor.bind(m_connectionEndpoint);
-            m_connectionAcceptor.listen();
-
-            m_fileStreamAcceptor.open(asio::ip::tcp::v4());
-            m_fileStreamAcceptor.set_option(asio::socket_base::reuse_address(true));
-            m_fileStreamAcceptor.bind(m_fileStreamEndpoint);
-            m_fileStreamAcceptor.listen();
-
-        } else {
-            if (m_connectionAcceptor.is_open()) {
-                m_connectionAcceptor.close();
-            }
-
-            if (m_fileStreamAcceptor.is_open()) {
-                m_fileStreamAcceptor.close();
-            }
-        }
+    void Client::Connect(const ConnectionCallbackData callbackData) {
+        if (m_clientRole == ClientRole::Server) EnableAcceptors();
+        else                                    DisableAcceptors();
 
         switch (m_clientMode) {
         case ClientMode::TCP_Client:
-            ConnectTCP();
+            ConnectTCP(callbackData);
             break;
         case ClientMode::TLS_Client:
-            ConnectTLS();
+            ConnectTLS(callbackData);
             break;
         default:
             break;
@@ -112,33 +91,55 @@ namespace P2P {
         m_tcpConnection = TCP::Connection<MessageType>::Create(m_context, m_tcpPackagesIn);
     }
 
-    void Client::ConnectTCP() {
+    void Client::ConnectTCP(const ConnectionCallbackData callbackData) {
         if (m_tcpConnection == nullptr) {
             CreateTCPConnection();
         }
 
         switch (m_clientRole) {
         case ClientRole::Client:
-            m_tcpConnection->Start(m_connectionEndpoint, m_fileStreamEndpoint, cc);
+            m_tcpConnection->Start(m_connectionEndpoint, m_fileStreamEndpoint, callbackData);
             break;
         case ClientRole::Server:
-            m_tcpConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, cc);
+            m_tcpConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, callbackData);
             break;
         }
     }
 
-    void Client::ConnectTLS() {
+    void Client::ConnectTLS(const ConnectionCallbackData callbackData) {
         if (m_tlsConnection == nullptr) {
             CreateTLSConnection();
         }
 
         switch (m_clientRole) {
         case ClientRole::Client:
-            m_tlsConnection->Start(m_connectionEndpoint, m_fileStreamEndpoint, cc);
+            m_tlsConnection->Start(m_connectionEndpoint, m_fileStreamEndpoint, callbackData);
             break;
         case ClientRole::Server:
-            m_tlsConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, cc);
+            m_tlsConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, callbackData);
             break;
+        }
+    }
+
+    void Client::EnableAcceptors() {
+        m_connectionAcceptor.open(asio::ip::tcp::v4());
+        m_connectionAcceptor.set_option(asio::socket_base::reuse_address(true));
+        m_connectionAcceptor.bind(m_connectionEndpoint);
+        m_connectionAcceptor.listen();
+
+        m_fileStreamAcceptor.open(asio::ip::tcp::v4());
+        m_fileStreamAcceptor.set_option(asio::socket_base::reuse_address(true));
+        m_fileStreamAcceptor.bind(m_fileStreamEndpoint);
+        m_fileStreamAcceptor.listen();
+    }
+
+    void Client::DisableAcceptors() {
+        if (m_connectionAcceptor.is_open()) {
+            m_connectionAcceptor.close();
+        }
+
+        if (m_fileStreamAcceptor.is_open()) {
+            m_fileStreamAcceptor.close();
         }
     }
 }
