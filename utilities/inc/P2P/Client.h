@@ -18,6 +18,7 @@ namespace P2P {
     using HandlerFunc = void(*)(std::unique_ptr<Package<MessageType>>);
 
     enum class ClientMode : uint8_t {
+        None,
         TCP_Client,
         TLS_Client
     };
@@ -34,17 +35,22 @@ namespace P2P {
 
     class Client {
     public:
-        constexpr void WaitForConnection();
+        Client(ClientRole role, const IPAddress& address, uint16_t serverPort, uint16_t fileStreamPort);
+        ~Client();
+
+        void Connect();
         NO_DISCARD constexpr ClientMode GetClientMode() const;
-        constexpr void SetClientMode(ClientMode mode);
+        void SetClientMode(ClientMode mode);
         NO_DISCARD constexpr ConnectionMode GetConnectionMode() const;
         constexpr void SetConnectionMode(ConnectionMode mode);
-        constexpr void AddHandler(MessageType type, HandlerFunc func);
+        void AddHandler(MessageType type, HandlerFunc func);
 
 
     private:
         void CreateTLSConnection();
         void CreateTCPConnection();
+        void ConnectTCP();
+        void ConnectTLS();
 
         IOContext                   m_context;
         std::shared_ptr<SSLContext> m_sslContext{nullptr};
@@ -55,11 +61,24 @@ namespace P2P {
         ts::deque<TLS::PackageIn<MessageType>> m_tlsPackagesIn;
         ts::deque<TCP::PackageIn<MessageType>> m_tcpPackagesIn;
 
-        ClientMode  m_clientMode        = ClientMode::TLS_Client;
+        TCPEndpoint m_connectionEndpoint;
+        TCPEndpoint m_fileStreamEndpoint;
+
+        TCPAcceptor m_connectionAcceptor;
+        TCPAcceptor m_fileStreamAcceptor;
+
+        IPAddress m_serverAddress;
+        uint16_t  m_serverPort;
+        uint16_t  m_serverFileStreamPort;
+
+        ClientMode  m_clientMode        = ClientMode::None;
         ConnectionMode m_connectionMode = ConnectionMode::LocalNetwork;
         ClientRole m_clientRole         = ClientRole::Client;
 
-        HandlerFunc m_handlers[MessageType::COUNT] = {nullptr};
+        asio::executor_work_guard<asio::io_context::executor_type> m_contextWorkGuard;
+        std::vector<std::thread> m_threadPool;
+
+        HandlerFunc m_handlers[static_cast<uint64_t>(MessageType::COUNT)] = {nullptr};
 
     };
 }

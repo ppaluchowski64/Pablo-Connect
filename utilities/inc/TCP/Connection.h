@@ -18,6 +18,7 @@ namespace TCP {
 
     template <PackageType T>
     class PackageIn {
+    public:
         std::unique_ptr<Package<T>> package;
         std::shared_ptr<Connection<T>> connection;
     };
@@ -142,7 +143,7 @@ namespace TCP {
                 co_await asio::async_connect(connection->m_socket, connectionEndpoints, asio::use_awaitable);
                 co_await asio::async_connect(connection->m_fileStreamSocket, fileStreamEndpoints, asio::use_awaitable);
 
-                Debug::Log("Accepted connection to " +
+                Debug::Log("Accepted TCP connection to " +
                       connection->m_socket.remote_endpoint().address().to_string() + ":" +
                       std::to_string(connection->m_socket.remote_endpoint().port()) + " , " +
                       connection->m_fileStreamSocket.remote_endpoint().address().to_string() + ":" +
@@ -167,10 +168,11 @@ namespace TCP {
         static asio::awaitable<void> coSeek(std::shared_ptr<Connection<T>> connection, TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, const ConnectionCallback callback) {
             try {
                 connection->m_connectionState = ConnectionState::CONNECTING;
+
                 co_await connectionAcceptor.async_accept(connection->m_socket, asio::use_awaitable);
                 co_await fileStreamAcceptor.async_accept(connection->m_fileStreamSocket, asio::use_awaitable);
 
-                Debug::Log("Accepted connection to " +
+                Debug::Log("Accepted TCP connection to " +
                       connection->m_socket.remote_endpoint().address().to_string() + ":" +
                       std::to_string(connection->m_socket.remote_endpoint().port()) + " , " +
                       connection->m_fileStreamSocket.remote_endpoint().address().to_string() + ":" +

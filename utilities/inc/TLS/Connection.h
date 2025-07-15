@@ -150,7 +150,7 @@ namespace TLS {
                 co_await asio::async_connect(connection->m_sslFileStreamSocket.lowest_layer(), fileStreamEndpoints, asio::use_awaitable);
                 co_await connection->m_sslFileStreamSocket.async_handshake(SSLStreamBase::client, asio::use_awaitable);
 
-                Debug::Log("Accepted connection to " +
+                Debug::Log("Accepted TLS connection to " +
                       connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
                       std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()) + " , " +
                       connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
@@ -180,7 +180,7 @@ namespace TLS {
                 co_await fileStreamAcceptor.async_accept(connection->m_sslFileStreamSocket.lowest_layer(), asio::use_awaitable);
                 co_await connection->m_sslFileStreamSocket.async_handshake(SSLStreamBase::server, asio::use_awaitable);
 
-                Debug::Log("Accepted connection to " +
+                Debug::Log("Accepted TLS connection to " +
                     connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
                     std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()) + " , " +
                     connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
