@@ -1,48 +1,38 @@
-#ifndef AWAITABLE_FLAG_H
-#define AWAITABLE_FLAG_H
+#ifndef AWAITABLE_FLAG_H_
+#define AWAITABLE_FLAG_H_
 
 #include <asio.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/steady_timer.hpp>
-#include <mutex>
+#include <atomic>
 
 class AwaitableFlag {
 public:
-    AwaitableFlag() = delete;
-    explicit AwaitableFlag(asio::any_io_executor executor) : m_executor(executor), m_timer(executor), m_flag(false) {}
+    explicit AwaitableFlag(asio::any_io_executor executor)
+        : m_executor(executor), m_timer(executor), m_flag(false) {}
 
     void Reset() {
-        {
-            std::lock_guard lock(m_mutex);
-            m_flag = false;
-        }
+        m_flag.store(false, std::memory_order_release);
     }
 
     void Signal() {
-        {
-            std::lock_guard lock(m_mutex);
-            m_flag = true;
-        }
-
+        m_flag.store(true, std::memory_order_release);
         m_timer.cancel();
     }
 
     asio::awaitable<void> Wait() {
         asio::error_code errorCode;
-        while (true) {
-            {
-                std::lock_guard lock(m_mutex);
-                if (m_flag) co_return;
-            }
-
+        while (!m_flag.load(std::memory_order_acquire)) {
             co_await m_timer.async_wait(asio::redirect_error(asio::use_awaitable, errorCode));
         }
+        co_return;
     }
+
 private:
     asio::any_io_executor m_executor;
-    mutable std::mutex    m_mutex;
     asio::steady_timer    m_timer;
-    bool                  m_flag;
+    std::atomic<bool>     m_flag;
+
 };
 
-#endif //AWAITABLE_FLAG_H
+#endif//AWAITABLE_FLAG_H_

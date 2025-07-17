@@ -33,15 +33,22 @@ FetchContent_Declare(
         GIT_TAG main
 )
 
+FetchContent_Declare(
+        concurrentqueue-mc
+        GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
+        GIT_TAG v1.0.4
+)
+
 FetchContent_MakeAvailable(google-test)
 FetchContent_MakeAvailable(google-benchmark)
 FetchContent_MakeAvailable(debug-log)
 FetchContent_MakeAvailable(thread-safe-structs)
+FetchContent_MakeAvailable(concurrentqueue-mc)
 
 file(GLOB_RECURSE UTIL_SRC utilities/*)
 add_library(util_lib_pconnect STATIC ${UTIL_SRC})
 target_link_libraries(util_lib_pconnect PRIVATE openssl::openssl asio::asio Debug-Log custom_containers)
-target_include_directories(util_lib_pconnect PUBLIC utilities/inc/)
+target_include_directories(util_lib_pconnect PUBLIC utilities/inc/ ${concurrentqueue_SOURCE_DIR})
 
 add_executable(pawelek_test tests/pawelek_test.cpp)
 target_link_libraries(pawelek_test PRIVATE openssl::openssl asio::asio Debug-Log custom_containers util_lib_pconnect)
