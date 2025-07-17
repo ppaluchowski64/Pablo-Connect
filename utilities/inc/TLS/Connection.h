@@ -93,11 +93,13 @@ namespace TLS {
             asio::co_spawn(m_context, coStart(connection, TCPEndpoint(address, connectionPort), TCPEndpoint(address, fileStreamPort), callbackData), asio::detached);
         }
 
-        NO_DISCARD ConnectionState GetConnectionState() {
-            if (m_connectionState == ConnectionState::CONNECTED) {
-                if (!m_sslSocket.lowest_layer().is_open() || !m_sslFileStreamSocket.lowest_layer().is_open()) {
-                    m_connectionState = ConnectionState::DISCONNECTED;
-                    m_connectionID    = 0;
+        NO_DISCARD ConnectionState GetConnectionState(const bool fullCheck = true) {
+            if (fullCheck) {
+                if (m_connectionState == ConnectionState::CONNECTED) {
+                    if (!m_sslSocket.lowest_layer().is_open() || !m_sslFileStreamSocket.lowest_layer().is_open()) {
+                        m_connectionState = ConnectionState::DISCONNECTED;
+                        m_connectionID    = 0;
+                    }
                 }
             }
 
@@ -150,11 +152,11 @@ namespace TLS {
                 co_await asio::async_connect(connection->m_sslFileStreamSocket.lowest_layer(), fileStreamEndpoints, asio::use_awaitable);
                 co_await connection->m_sslFileStreamSocket.async_handshake(SSLStreamBase::client, asio::use_awaitable);
 
-                Debug::Log("Accepted TLS connection to " +
-                      connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
-                      std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()) + " , " +
-                      connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
-                      std::to_string(connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().port()));
+                Debug::Log("Accepted TLS connection to {}:{}, {}:{}",
+                      connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string(),
+                      connection->m_sslSocket.lowest_layer().remote_endpoint().port(),
+                      connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().address().to_string(),
+                      connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().port());
 
                 connection->m_connectionID = s_currentConnectionID++;
                 connection->m_connectionState = ConnectionState::CONNECTED;
@@ -182,10 +184,10 @@ namespace TLS {
                 co_await fileStreamAcceptor.async_accept(connection->m_sslFileStreamSocket.lowest_layer(), asio::use_awaitable);
                 co_await connection->m_sslFileStreamSocket.async_handshake(SSLStreamBase::server, asio::use_awaitable);
 
-                Debug::Log("Accepted TLS connection to " +
-                    connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
-                    std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()) + " , " +
-                    connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().address().to_string() + ":" +
+                Debug::Log("Accepted TLS connection to {}:{}, {}:{}",
+                    connection->m_sslSocket.lowest_layer().remote_endpoint().address().to_string(),
+                    std::to_string(connection->m_sslSocket.lowest_layer().remote_endpoint().port()),
+                    connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().address().to_string(),
                     std::to_string(connection->m_sslFileStreamSocket.lowest_layer().remote_endpoint().port()));
 
                 connection->m_connectionID = s_currentConnectionID++;

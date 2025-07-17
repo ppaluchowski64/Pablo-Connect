@@ -19,6 +19,75 @@ namespace P2P {
         }
     }
 
+    void Client::Disconnect() {
+        if (m_clientRole == ClientRole::Server) DisableAcceptors();
+
+        switch (m_clientMode) {
+        case ClientMode::TCP_Client:
+            if (!IsTCPConnectionValid()) {
+                return;
+            }
+
+            m_tcpConnection->Disconnect();
+            break;
+        case ClientMode::TLS_Client:
+            if (!IsTLSConnectionValid()) {
+                return;
+            }
+
+            m_tlsConnection->Disconnect();
+            break;
+        default:
+            break;
+        }
+    }
+
+    void Client::Send(std::unique_ptr<Package<MessageType>>&& message) const {
+        switch (m_clientMode) {
+        case ClientMode::TCP_Client:
+            if (!IsTCPConnectionValid()) {
+                Debug::LogError("TCP connection invalid");
+                return;
+            }
+
+            m_tcpConnection->Send(std::move(message));
+            break;
+        case ClientMode::TLS_Client:
+            if (!IsTLSConnectionValid()) {
+                Debug::LogError("TLS connection invalid");
+                return;
+            }
+
+            m_tlsConnection->Send(std::move(message));
+            break;
+        default:
+            break;
+        }
+    }
+
+    void Client::RequestFile(const std::string& requestedFilePath, const std::string& fileName) const {
+        switch (m_clientMode) {
+        case ClientMode::TCP_Client:
+            if (!IsTCPConnectionValid()) {
+                Debug::LogError("TCP connection invalid");
+                return;
+            }
+
+            m_tcpConnection->RequestFile(requestedFilePath, fileName);
+            break;
+        case ClientMode::TLS_Client:
+            if (!IsTLSConnectionValid()) {
+                Debug::LogError("TLS connection invalid");
+                return;
+            }
+
+            m_tlsConnection->RequestFile(requestedFilePath, fileName);
+            break;
+        default:
+            break;
+        }
+    }
+
     NO_DISCARD constexpr ClientMode Client::GetClientMode() const {
         return m_clientMode;
     }
@@ -64,6 +133,7 @@ namespace P2P {
 
     Client::~Client() {
         m_context.stop();
+        Disconnect();
 
         for (auto& thread : m_threadPool) {
             if (thread.joinable()) {
@@ -104,6 +174,20 @@ namespace P2P {
             m_tcpConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, callbackData);
             break;
         }
+
+        for (int i = 0; i < 1; i++) {
+            m_threadPool.emplace_back([this]() {
+                while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTING) {}
+                while (m_tcpConnection->GetConnectionState(false) == ConnectionState::CONNECTED) {
+                    if (auto result = m_tcpPackagesIn.pop_front_nullable(); result.has_value()) {
+                        auto [package, connection] = std::move(result.value());
+                        m_handlers[package->GetHeader().type](std::move(package));
+                    }
+                }
+
+                Debug::Log("Exit");
+            });
+        }
     }
 
     void Client::ConnectTLS(const ConnectionCallbackData callbackData) {
@@ -119,6 +203,36 @@ namespace P2P {
             m_tlsConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, callbackData);
             break;
         }
+
+        for (int i = 0; i < 1; i++) {
+            m_threadPool.emplace_back([this]() {
+                while (m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTING) {}
+                while (m_tlsConnection->GetConnectionState(false) == ConnectionState::CONNECTED) {
+                    if (auto result = m_tlsPackagesIn.pop_front_nullable(); result.has_value()) {
+                        auto [package, connection] = std::move(result.value());
+                        m_handlers[package->GetHeader().type](std::move(package));
+                    }
+                }
+
+                Debug::Log("Exit");
+            });
+        }
+    }
+
+    bool Client::IsTCPConnectionValid() const {
+        if (m_tcpConnection == nullptr) {
+            return false;
+        }
+
+        return m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTED;
+    }
+
+    bool Client::IsTLSConnectionValid() const {
+        if (m_tlsConnection == nullptr) {
+            return false;
+        }
+
+        return m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTED;
     }
 
     void Client::EnableAcceptors() {

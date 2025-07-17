@@ -24,7 +24,7 @@ namespace TLS {
         EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr);
         if (!ctx || EVP_PKEY_keygen_init(ctx) <= 0 || EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, NID_X9_62_prime256v1) <= 0 || EVP_PKEY_keygen(ctx, &pkey) <= 0) {
             const std::string error = GetOpenSSLError();
-            Debug::LogError("Failed to generate EC key (" + error + ")");
+            Debug::LogError("Failed to generate EC key ({})", error);
             EVP_PKEY_CTX_free(ctx);
             return;
         }
@@ -54,14 +54,14 @@ namespace TLS {
 
         if (!X509_sign(cert, pkey, EVP_sha256())) {
             const std::string error = GetOpenSSLError();
-            Debug::LogError("Failed to sign certificate (" + error + ")");
+            Debug::LogError("Failed to sign certificate ({})", error);
             return;
         }
 
         FILE* certfile = fopen(certPath.c_str(), "wb");
         if (!certfile) {
             const std::string error = GetOpenSSLError();
-            Debug::LogError("Failed to open cert file (" + error + ")");
+            Debug::LogError("Failed to sign certificate ({})", error);
             return;
         }
         PEM_write_X509(certfile, cert);

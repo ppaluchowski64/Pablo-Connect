@@ -66,11 +66,13 @@ namespace TCP {
             asio::co_spawn(m_context, coStart(connection, TCPEndpoint(address, connectionPort), TCPEndpoint(address, fileStreamPort), callbackData), asio::detached);
         }
 
-        NO_DISCARD ConnectionState GetConnectionState() {
-            if (m_connectionState == ConnectionState::CONNECTED) {
-                if (!m_socket.is_open() || !m_fileStreamSocket.is_open()) {
-                    m_connectionState = ConnectionState::DISCONNECTED;
-                    m_connectionID    = 0;
+        NO_DISCARD ConnectionState GetConnectionState(const bool fullCheck = true) {
+            if (fullCheck) {
+                if (m_connectionState == ConnectionState::CONNECTED) {
+                    if (!m_socket.is_open() || !m_fileStreamSocket.is_open()) {
+                        m_connectionState = ConnectionState::DISCONNECTED;
+                        m_connectionID    = 0;
+                    }
                 }
             }
 
@@ -143,10 +145,10 @@ namespace TCP {
                 co_await asio::async_connect(connection->m_socket, connectionEndpoints, asio::use_awaitable);
                 co_await asio::async_connect(connection->m_fileStreamSocket, fileStreamEndpoints, asio::use_awaitable);
 
-                Debug::Log("Accepted TCP connection to " +
-                      connection->m_socket.remote_endpoint().address().to_string() + ":" +
-                      std::to_string(connection->m_socket.remote_endpoint().port()) + " , " +
-                      connection->m_fileStreamSocket.remote_endpoint().address().to_string() + ":" +
+                Debug::Log("Accepted TCP connection to {}:{}, {}:{}",
+                      connection->m_socket.remote_endpoint().address().to_string(),
+                      std::to_string(connection->m_socket.remote_endpoint().port()),
+                      connection->m_fileStreamSocket.remote_endpoint().address().to_string(),
                       std::to_string(connection->m_fileStreamSocket.remote_endpoint().port()));
 
                 connection->m_connectionID = s_currentConnectionID++;
@@ -174,10 +176,10 @@ namespace TCP {
                 co_await connectionAcceptor.async_accept(connection->m_socket, asio::use_awaitable);
                 co_await fileStreamAcceptor.async_accept(connection->m_fileStreamSocket, asio::use_awaitable);
 
-                Debug::Log("Accepted TCP connection to " +
-                      connection->m_socket.remote_endpoint().address().to_string() + ":" +
-                      std::to_string(connection->m_socket.remote_endpoint().port()) + " , " +
-                      connection->m_fileStreamSocket.remote_endpoint().address().to_string() + ":" +
+                Debug::Log("Accepted TCP connection to {}:{}, {}:{}",
+                      connection->m_socket.remote_endpoint().address().to_string(),
+                      std::to_string(connection->m_socket.remote_endpoint().port()),
+                      connection->m_fileStreamSocket.remote_endpoint().address().to_string(),
                       std::to_string(connection->m_fileStreamSocket.remote_endpoint().port()));
 
                 connection->m_connectionID = s_currentConnectionID++;
@@ -303,6 +305,7 @@ namespace TCP {
 
                 while (connection->m_connectionState == ConnectionState::CONNECTED) {
                     while (!connection->m_outDeque.empty()) {
+                        //Debug::Log("HERE5");
                         std::unique_ptr<Package<T>> package = connection->m_outDeque.pop_front();
                         PackageHeader header = package->GetHeader();
 

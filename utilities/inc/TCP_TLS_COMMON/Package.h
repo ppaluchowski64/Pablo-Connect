@@ -39,14 +39,9 @@ inline uint8_t operator|(PackageFlag l, PackageFlag r) {
 }
 
 struct PackageHeader {
-    PackageTypeInt type;
-    PackageSizeInt size;
-    uint8_t        flags;
-};
-
-struct FilePackageData {
-    PackageSizeInt size;
-    std::string    fileName;
+    PackageTypeInt type{};
+    PackageSizeInt size{};
+    uint8_t        flags{};
 };
 
 template <PackageType T>

@@ -39,10 +39,22 @@ namespace P2P {
         ~Client();
 
         void Connect(ConnectionCallbackData callbackData = {nullptr, nullptr});
-        NO_DISCARD constexpr ClientMode GetClientMode() const;
+        void Disconnect();
+
+        void Send(std::unique_ptr<Package<MessageType>>&& message) const;
+        template<StdLayoutOrVecOrString... Args>
+        void Send(MessageType type, Args... args) {
+            std::unique_ptr<Package<MessageType>> package = Package<MessageType>::CreateUnique(type, args...);
+            Send(std::move(package));
+        }
+        void RequestFile(const std::string& requestedFilePath, const std::string& fileName) const;
+
         void SetClientMode(ClientMode mode);
-        NO_DISCARD constexpr ConnectionMode GetConnectionMode() const;
         constexpr void SetConnectionMode(ConnectionMode mode);
+
+        NO_DISCARD constexpr ConnectionMode GetConnectionMode() const;
+        NO_DISCARD constexpr ClientMode GetClientMode() const;
+
         void AddHandler(MessageType type, HandlerFunc func);
 
 
@@ -52,6 +64,8 @@ namespace P2P {
         void CreateTCPConnection();
         void ConnectTCP(ConnectionCallbackData callbackData);
         void ConnectTLS(ConnectionCallbackData callbackData);
+        bool IsTCPConnectionValid() const;
+        bool IsTLSConnectionValid() const;
 
         void EnableAcceptors();
         void DisableAcceptors();
