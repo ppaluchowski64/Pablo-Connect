@@ -6,14 +6,8 @@
 
 class P2PSettings {
 public:
-    static void SetFileDownloadDirectory(const std::filesystem::path& directory) {
-        std::lock_guard lock(m_mutex);
-        m_fileDownloadDirectory = directory;
-    }
-
-    static std::filesystem::path GetFileDownloadDirectory() {
-        return m_fileDownloadDirectory;
-    }
+    static void SetFileDownloadDirectory(const std::filesystem::path& directory);
+    static std::filesystem::path GetFileDownloadDirectory();
 
 private:
     static std::mutex            m_mutex;

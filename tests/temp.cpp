@@ -23,8 +23,8 @@ int main() {
         P2P::Client client(P2P::ClientRole::Client, ip, serverConnectionPort, serverFileStreamPort);
         P2P::Client server(P2P::ClientRole::Server, ip, serverConnectionPort, serverFileStreamPort);
 
-        client.SetClientMode(P2P::ClientMode::TLS_Client);
-        server.SetClientMode(P2P::ClientMode::TLS_Client);
+        client.SetClientMode(P2P::ClientMode::TCP_Client);
+        server.SetClientMode(P2P::ClientMode::TCP_Client);
 
         client.AddHandler(P2P::MessageType::message, MessageH);
         server.AddHandler(P2P::MessageType::message, MessageH);

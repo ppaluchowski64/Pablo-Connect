@@ -8,7 +8,7 @@
 #include <DebugLog.h>
 #include <type_traits>
 #include <string>
-#include <TCP_TLS_COMMON/Common.h>
+#include <P2P/Common.h>
 
 enum class PackageFlag : uint8_t {
     NONE               = 0,
@@ -45,7 +45,36 @@ struct PackageHeader {
 template <PackageType T>
 class Package final {
 public:
-    Package() = delete;
+    Package() {
+        m_header = {0, 0};
+        m_rawBody = nullptr;
+    };
+
+    Package(const Package&) = delete;
+    Package& operator=(const Package&) = delete;
+
+    Package(Package&& other) noexcept
+        : m_header(other.m_header), m_rawBody(other.m_rawBody), m_readOffset(other.m_readOffset) {
+        other.m_rawBody = nullptr;
+    }
+
+    Package& operator=(Package&& other) noexcept {
+        if (this != &other) {
+            delete[] m_rawBody;
+
+            m_header = other.m_header;
+            m_rawBody = other.m_rawBody;
+            m_readOffset = other.m_readOffset;
+
+            other.m_rawBody = nullptr;
+        }
+        return *this;
+    }
+
+    ~Package() {
+        delete[] m_rawBody;
+    }
+
     explicit Package(const PackageHeader header) : m_header(header) {
         m_rawBody = new uint8_t[m_header.size];
     }
@@ -168,10 +197,6 @@ public:
             std::memcpy(&element, m_rawBody + m_readOffset, size);
             m_readOffset += size;
         }
-    }
-
-    ~Package() {
-        delete[] m_rawBody;
     }
 
     template <StdLayoutOrVecOrString... Args>

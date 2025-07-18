@@ -1,12 +1,15 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include <TCP_TLS_COMMON/Common.h>
-#include <TCP_TLS_COMMON/Package.h>
-#include <TCP/Connection.h>
-#include <TLS/Connection.h>
+#include <P2P/Common.h>
+#include <P2P/Package.h>
+#include <P2P/ConnectionParent.h>
+#include <P2P/TCPConnection.h>
+#include <P2P/TLSConnection.h>
 #include <TLS/CertificateManager.h>
 #include <UniqueFileNamesGenerator.h>
+
+#include <concurrentqueue.h>
 
 namespace P2P {
     enum class MessageType : uint16_t {
@@ -73,11 +76,9 @@ namespace P2P {
         IOContext                   m_context;
         std::shared_ptr<SSLContext> m_sslContext{nullptr};
 
-        std::shared_ptr<TCP::Connection<MessageType>> m_tcpConnection{nullptr};
-        std::shared_ptr<TLS::Connection<MessageType>> m_tlsConnection{nullptr};
-
-        ts::deque<TLS::PackageIn<MessageType>> m_tlsPackagesIn;
-        ts::deque<TCP::PackageIn<MessageType>> m_tcpPackagesIn;
+        std::shared_ptr<TCPConnection<MessageType>> m_tcpConnection{nullptr};
+        std::shared_ptr<TLSConnection<MessageType>> m_tlsConnection{nullptr};
+        moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<MessageType>>> m_packagesIn;
 
         TCPEndpoint m_connectionEndpoint;
         TCPEndpoint m_fileStreamEndpoint;

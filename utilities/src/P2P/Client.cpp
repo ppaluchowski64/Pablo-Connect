@@ -122,7 +122,8 @@ namespace P2P {
     Client::Client(const ClientRole role, const IPAddress& address, const uint16_t serverPort, const uint16_t fileStreamPort) :
     m_connectionEndpoint(TCPEndpoint(address, serverPort)), m_fileStreamEndpoint(TCPEndpoint(address, fileStreamPort)),
         m_connectionAcceptor(m_context), m_fileStreamAcceptor(m_context),
-        m_serverPort(serverPort), m_serverFileStreamPort(fileStreamPort), m_clientRole(role), m_contextWorkGuard(asio::make_work_guard(m_context)){
+        m_serverPort(serverPort), m_serverFileStreamPort(fileStreamPort), m_clientRole(role), m_contextWorkGuard(asio::make_work_guard(m_context)),
+        m_packagesIn(100000) {
 
         for (int i = 0; i < 1; i++) {
             m_threadPool.emplace_back([this]() {
@@ -151,14 +152,14 @@ namespace P2P {
 
         if (m_sslContext == nullptr) {
             const bool isServer = m_clientRole == ClientRole::Server;
-            m_sslContext = TLS::Connection<MessageType>::CreateSSLContext(certificatePath, isServer);
+            m_sslContext = TLSConnection<MessageType>::CreateSSLContext(certificatePath, isServer);
         }
 
-        m_tlsConnection = TLS::Connection<MessageType>::Create(m_context, m_sslContext, m_tlsPackagesIn);
+        m_tlsConnection = TLSConnection<MessageType>::Create(m_context, m_sslContext, m_packagesIn);
     }
 
     void Client::CreateTCPConnection() {
-        m_tcpConnection = TCP::Connection<MessageType>::Create(m_context, m_tcpPackagesIn);
+        m_tcpConnection = TCPConnection<MessageType>::Create(m_context, m_packagesIn);
     }
 
     void Client::ConnectTCP(const ConnectionCallbackData callbackData) {
@@ -177,15 +178,14 @@ namespace P2P {
 
         for (int i = 0; i < 1; i++) {
             m_threadPool.emplace_back([this]() {
+                moodycamel::ConsumerToken token(m_packagesIn);
+
                 while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTING) {}
-                while (m_tcpConnection->GetConnectionState(false) == ConnectionState::CONNECTED) {
-                    if (auto result = m_tcpPackagesIn.pop_front_nullable(); result.has_value()) {
-                        auto [package, connection] = std::move(result.value());
-                        m_handlers[package->GetHeader().type](std::move(package));
+                while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTED) {
+                    if (std::unique_ptr<PackageIn<MessageType>> packageIn; m_packagesIn.try_dequeue(packageIn)) {
+                        m_handlers[packageIn->Package->GetHeader().type](std::move(packageIn->Package));
                     }
                 }
-
-                Debug::Log("Exit");
             });
         }
     }
@@ -206,15 +206,14 @@ namespace P2P {
 
         for (int i = 0; i < 1; i++) {
             m_threadPool.emplace_back([this]() {
+                moodycamel::ConsumerToken token(m_packagesIn);
+
                 while (m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTING) {}
-                while (m_tlsConnection->GetConnectionState(false) == ConnectionState::CONNECTED) {
-                    if (auto result = m_tlsPackagesIn.pop_front_nullable(); result.has_value()) {
-                        auto [package, connection] = std::move(result.value());
-                        m_handlers[package->GetHeader().type](std::move(package));
+                while (m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTED) {
+                    if (std::unique_ptr<PackageIn<MessageType>> packageIn; m_packagesIn.try_dequeue(packageIn)) {
+                        m_handlers[packageIn->Package->GetHeader().type](std::move(packageIn->Package));
                     }
                 }
-
-                Debug::Log("Exit");
             });
         }
     }
