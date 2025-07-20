@@ -32,19 +32,6 @@ int main() {
         server.Connect();
         client.Connect();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-        const auto start = std::chrono::steady_clock::now();
-        while (std::chrono::steady_clock::now() - start < std::chrono::seconds(2)) {
-            client.Send(P2P::MessageType::message);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(8000));
-
-        uint64_t val = counter.load();
-
-        Debug::Log("Total packages: {}", val);
-        Debug::Log("p/s:            {}", static_cast<double>(val) / 10);
-
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
     }

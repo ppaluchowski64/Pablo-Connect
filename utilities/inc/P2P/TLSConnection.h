@@ -15,7 +15,7 @@ public:
     TLSConnection(IOContext& sharedContext, std::shared_ptr<SSLContext> sharedSSLContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue)
         : m_context(sharedContext), m_sslContext(std::move(sharedSSLContext)), m_socket(m_context, *m_sslContext), m_fileStreamSocket(m_context, *m_sslContext),
           m_sendMessageAwaitableFlag(m_context.get_executor()), m_sendFileAwaitableFlag(m_context.get_executor()), m_receiveFileAwaitableFlag(m_context.get_executor()),
-          m_inQueue(sharedMessageQueue), m_fileRequestQueue(1000), m_fileInfoQueue(1000), m_outQueue(1000000)
+          m_inQueue(sharedMessageQueue)
     { }
 
     static NO_DISCARD std::shared_ptr<SSLContext> CreateSSLContext(const std::filesystem::path& path, const bool isServer) {
@@ -67,7 +67,9 @@ public:
     }
 
     void Send(std::unique_ptr<Package<T>>&& package) override {
-        m_outQueue.enqueue(std::move(package));
+        static thread_local moodycamel::ProducerToken token(m_outQueue);
+
+        m_outQueue.enqueue(token, std::move(package));
         m_sendMessageAwaitableFlag.Signal();
     }
 

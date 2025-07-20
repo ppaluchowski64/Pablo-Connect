@@ -44,7 +44,9 @@ public:
     }
 
     void Send(std::unique_ptr<Package<T>>&& package) override {
-        m_outQueue.enqueue(std::move(package));
+        static thread_local moodycamel::ProducerToken token(m_outQueue);
+
+        m_outQueue.enqueue(token, std::move(package));
         m_sendMessageAwaitableFlag.Signal();
     }
 
