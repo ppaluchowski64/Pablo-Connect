@@ -1,4 +1,5 @@
 #include <TLS/CertificateManager.h>
+#include <tracy/Tracy.hpp>
 
 #include <openssl/evp.h>
 #include <openssl/pem.h>
@@ -10,6 +11,7 @@
 
 namespace TLS {
     void CertificateManager::GenerateCertificate(const std::filesystem::path& path) {
+        ZoneScoped;
         const std::string keyPath = (path / "privateKey.key").string();
         const std::string certPath = (path / "certificate.crt").string();
 
@@ -72,6 +74,7 @@ namespace TLS {
     }
 
     bool CertificateManager::IsCertificateValid(const std::filesystem::path &path) {
+        ZoneScoped;
         constexpr int certificateMinimalTimeLeft = 60 * 10;
 
         const std::string certPath = (path / "certificate.crt").string();
@@ -99,6 +102,7 @@ namespace TLS {
 
 
     std::string CertificateManager::GetOpenSSLError() {
+        ZoneScoped;
         const unsigned long err = ERR_get_error();
         if (err == 0)
             return "Unknown OpenSSL error (no error on queue)";

@@ -8,6 +8,7 @@
 #include <P2P/TLSConnection.h>
 #include <TLS/CertificateManager.h>
 #include <UniqueFileNamesGenerator.h>
+#include <tracy/Tracy.hpp>
 
 #include <concurrentqueue.h>
 
@@ -46,8 +47,9 @@ namespace P2P {
 
         void Send(std::unique_ptr<Package<MessageType>>&& message) const;
         template<StdLayoutOrVecOrString... Args>
-        void Send(MessageType type, Args... args) {
-            std::unique_ptr<Package<MessageType>> package = Package<MessageType>::CreateUnique(type, args...);
+        void Send(MessageType type, Args&&... args) {
+            ZoneScoped;
+            auto package = Package<MessageType>::CreateUnique(type, std::forward<Args>(args)...);
             Send(std::move(package));
         }
         void RequestFile(const std::string& requestedFilePath, const std::string& fileName) const;

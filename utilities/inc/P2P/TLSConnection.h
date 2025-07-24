@@ -19,6 +19,7 @@ public:
     { }
 
     static NO_DISCARD std::shared_ptr<SSLContext> CreateSSLContext(const std::filesystem::path& path, const bool isServer) {
+        ZoneScoped;
         auto ctx = std::make_shared<SSLContext>(isServer ? SSLContext::tlsv13_server : SSLContext::tlsv13_client);
         const std::string keyPath = (path / "privateKey.key").string();
         const std::string certPath = (path / "certificate.crt").string();
@@ -43,6 +44,7 @@ public:
     }
 
     void Start(const TCPEndpoint& connectionEndpoint, const TCPEndpoint& fileStreamEndpoint, const ConnectionCallbackData callbackData) override {
+        ZoneScoped;
         if (GetConnectionState() != ConnectionState::DISCONNECTED) {
             Debug::LogError("Connection already started");
             return;
@@ -53,6 +55,7 @@ public:
     }
 
     void Seek(TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, const ConnectionCallbackData callbackData) override {
+        ZoneScoped;
         if (GetConnectionState() != ConnectionState::DISCONNECTED) {
             Debug::LogError("Connection already started");
             return;
@@ -63,10 +66,12 @@ public:
     }
 
     NO_DISCARD ConnectionState GetConnectionState() const override {
+        ZoneScoped;
         return m_connectionState.load(std::memory_order_acquire);
     }
 
     void Send(std::unique_ptr<Package<T>>&& package) override {
+        ZoneScoped;
         static thread_local moodycamel::ProducerToken token(m_outQueue);
 
         m_outQueue.enqueue(token, std::move(package));
@@ -74,12 +79,14 @@ public:
     }
 
     void RequestFile(const std::string& requestedFilePath, const std::string& fileName) override {
-        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(static_cast<T>(0), fileName, requestedFilePath);
+        ZoneScoped;
+        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(static_cast<T>(0), std::string(requestedFilePath), std::string(requestedFilePath));
         package->GetHeader().flags = static_cast<uint8_t>(PackageFlag::FILE_REQUEST);
         Send(std::move(package));
     }
 
     void Disconnect() override {
+        ZoneScoped;
         std::shared_ptr<TLSConnection<T>> connection = this->shared_from_this();
         asio::co_spawn(m_context, CoDisconnect(connection), asio::detached);
     }
@@ -246,7 +253,7 @@ private:
         }
     }
 
-        static asio::awaitable<void> CoReceiveFile(std::shared_ptr<TLSConnection<T>> connection) {
+    static asio::awaitable<void> CoReceiveFile(std::shared_ptr<TLSConnection<T>> connection) {
         try {
             moodycamel::ConsumerToken fileInfoToken(connection->m_fileInfoQueue);
 
@@ -354,7 +361,7 @@ private:
                     PackageSizeInt size = std::filesystem::file_size(filePath);
 
                     {
-                        std::unique_ptr<Package<T>> fileInfo = Package<T>::CreateUnique(static_cast<T>(0), filename, size);
+                        std::unique_ptr<Package<T>> fileInfo = Package<T>::CreateUnique(static_cast<T>(0), std::move(filename), std::move(size));
                         fileInfo->GetHeader().flags = static_cast<uint8_t>(PackageFlag::FILE_RECEIVE_INFO);
                         connection->Send(std::move(fileInfo));
                     }
@@ -390,6 +397,7 @@ private:
     }
 
     void SetConnectionState(const ConnectionState state) {
+        ZoneScoped;
         m_connectionState.store(state, std::memory_order_release);
     }
 

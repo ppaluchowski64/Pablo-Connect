@@ -9,6 +9,8 @@
 #include <type_traits>
 #include <string>
 #include <P2P/Common.h>
+#include <boost/endian/conversion.hpp>
+#include <tracy/Tracy.hpp>
 
 enum class PackageFlag : uint8_t {
     NONE               = 0,
@@ -59,6 +61,8 @@ public:
     }
 
     Package& operator=(Package&& other) noexcept {
+        ZoneScoped;
+
         if (this != &other) {
             delete[] m_rawBody;
 
@@ -89,6 +93,7 @@ public:
 
     template <StdLayoutOrVecOrString T0>
     NO_DISCARD T0 GetValue() {
+        ZoneScoped;
         if constexpr (std::is_same_v<T0, std::string>) {
             T0 element{};
             PackageSizeInt stringSize;
@@ -152,6 +157,7 @@ public:
 
     template <StdLayoutOrVecOrString T0>
     void GetValue(T0& element) {
+        ZoneScoped;
         if constexpr (std::is_same_v<T0, std::string>) {
             PackageSizeInt stringSize;
 
@@ -160,6 +166,7 @@ public:
             }
 
             std::memcpy(&stringSize, m_rawBody + m_readOffset, sizeof(PackageSizeInt));
+            boost::endian::big_to_native_inplace(stringSize);
             m_readOffset += sizeof(PackageSizeInt);
 
             if (m_readOffset + stringSize > m_header.size) {
@@ -177,6 +184,7 @@ public:
             }
 
             std::memcpy(&vectorSize, m_rawBody + m_readOffset, sizeof(PackageSizeInt));
+            boost::endian::big_to_native_inplace(vectorSize);
             m_readOffset += sizeof(PackageSizeInt);
             const PackageSizeInt dataSize = vectorSize * sizeof(typename T0::value_type);
 
@@ -186,6 +194,11 @@ public:
 
             element.resize(vectorSize);
             std::memcpy(element.data(), m_rawBody + m_readOffset, dataSize);
+
+            for (auto& item : element) {
+                boost::endian::big_to_native_inplace(item);
+            }
+
             m_readOffset += dataSize;
         } else {
             const PackageSizeInt size = sizeof(T0);
@@ -195,16 +208,19 @@ public:
             }
 
             std::memcpy(&element, m_rawBody + m_readOffset, size);
+            boost::endian::big_to_native_inplace(element);
             m_readOffset += size;
         }
     }
 
     template <StdLayoutOrVecOrString... Args>
-    static Package Create(T type, const Args&... args) {
+    static Package Create(T type, Args&&... args) {
+        ZoneScoped;
         PackageHeader header {
             static_cast<PackageTypeInt>(type),
             0
         };
+
         (CalculateElementSize(args, header), ...);
         Package newPackage(header);
         PackageSizeInt offset = 0;
@@ -214,35 +230,46 @@ public:
     }
 
     template <StdLayoutOrVecOrString... Args>
-    static std::unique_ptr<Package> CreateUnique(T type, const Args&... args) {
+    static std::unique_ptr<Package> CreateUnique(T type, Args&&... args) {
+        ZoneScoped;
         PackageHeader header {
             static_cast<PackageTypeInt>(type),
             0
         };
+
         (CalculateElementSize(args, header), ...);
-        std::unique_ptr<Package> newPackage = std::make_unique<Package>(header);
+        auto newPackage = std::make_unique<Package>(header);
         PackageSizeInt offset = 0;
         (InsertElementToBody(args, *newPackage, offset), ...);
 
-        return std::move(newPackage);
+        return newPackage;
     }
 
 private:
     template <typename T0>
-    static void InsertElementToBody(const T0& arg, Package& package, PackageSizeInt& offset) {
+    static void InsertElementToBody(T0& arg, Package& package, PackageSizeInt& offset) {
+        ZoneScoped;
         using T = std::decay_t<T0>;
 
         if constexpr (std::is_same_v<T, std::string>) {
-            const auto size = static_cast<PackageSizeInt>(arg.size());
+            auto size = static_cast<PackageSizeInt>(arg.size());
+            boost::endian::native_to_big_inplace(size);
             std::memcpy(package.m_rawBody + offset, &size, sizeof(PackageSizeInt));
             std::memcpy(package.m_rawBody + offset + sizeof(PackageSizeInt), arg.data(), arg.size());
             offset += sizeof(PackageSizeInt) + arg.size();
         } else if constexpr (is_std_layout_vector<T>::value) {
-            const auto size = static_cast<PackageSizeInt>(arg.size());
+            auto size = static_cast<PackageSizeInt>(arg.size());
+            boost::endian::native_to_big_inplace(size);
+
+            for (auto& element : arg) {
+                boost::endian::native_to_big_inplace(element);
+            }
+
             std::memcpy(package.m_rawBody + offset, &size, sizeof(PackageSizeInt));
             std::memcpy(package.m_rawBody + offset + sizeof(PackageSizeInt), arg.data(), arg.size() * sizeof(typename T::value_type));
             offset += sizeof(PackageSizeInt) + arg.size() * sizeof(typename T::value_type);
         } else {
+            boost::endian::native_to_big_inplace(arg);
             std::memcpy(package.m_rawBody + offset, &arg, sizeof(T));
             offset += sizeof(T);
         }
@@ -250,6 +277,7 @@ private:
 
     template <typename T0>
     static void CalculateElementSize(const T0& arg, PackageHeader& packageHeader) {
+        ZoneScoped;
         using T = std::decay_t<T0>;
         if constexpr (std::is_same_v<T, std::string>) {
             packageHeader.size += arg.size() + sizeof(PackageSizeInt);

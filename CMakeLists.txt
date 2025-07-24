@@ -8,6 +8,7 @@ include(FetchContent)
 
 find_package(OpenSSL REQUIRED)
 find_package(asio    REQUIRED)
+find_package(Tracy   REQUIRED)
 
 FetchContent_Declare(
         google-test
@@ -48,6 +49,14 @@ FetchContent_MakeAvailable(concurrentqueue-mc)
 file(GLOB_RECURSE UTIL_SRC utilities/*)
 add_library(util_lib_pconnect STATIC ${UTIL_SRC})
 target_link_libraries(util_lib_pconnect PRIVATE openssl::openssl asio::asio Debug-Log custom_containers)
+
+target_compile_definitions(util_lib_pconnect PUBLIC
+        $<$<CONFIG:Debug>:TRACY_ENABLE>
+)
+target_link_libraries(util_lib_pconnect PUBLIC
+        $<$<CONFIG:Debug>:Tracy::TracyClient>
+)
+
 target_include_directories(util_lib_pconnect PUBLIC utilities/inc/ ${concurrentqueue_SOURCE_DIR})
 
 add_executable(pawelek_test tests/pawelek_test.cpp)

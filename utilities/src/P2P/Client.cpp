@@ -1,9 +1,12 @@
 #include <P2P/Client.h>
 #include <iostream>
+#include <tracy/Tracy.hpp>
 
 
 namespace P2P {
     void Client::Connect(const ConnectionCallbackData callbackData) {
+        ZoneScoped;
+
         if (m_clientRole == ClientRole::Server) EnableAcceptors();
         else                                    DisableAcceptors();
 
@@ -20,6 +23,8 @@ namespace P2P {
     }
 
     void Client::Disconnect() {
+        ZoneScoped;
+
         if (m_clientRole == ClientRole::Server) DisableAcceptors();
 
         switch (m_clientMode) {
@@ -43,6 +48,8 @@ namespace P2P {
     }
 
     void Client::Send(std::unique_ptr<Package<MessageType>>&& message) const {
+        ZoneScoped;
+
         switch (m_clientMode) {
         case ClientMode::TCP_Client:
             if (!IsTCPConnectionValid()) {
@@ -66,6 +73,8 @@ namespace P2P {
     }
 
     void Client::RequestFile(const std::string& requestedFilePath, const std::string& fileName) const {
+        ZoneScoped;
+
         switch (m_clientMode) {
         case ClientMode::TCP_Client:
             if (!IsTCPConnectionValid()) {
@@ -89,10 +98,12 @@ namespace P2P {
     }
 
     NO_DISCARD constexpr ClientMode Client::GetClientMode() const {
+        ZoneScoped;
         return m_clientMode;
     }
 
     void Client::SetClientMode(const ClientMode mode) {
+        ZoneScoped;
         m_clientMode = mode;
 
         switch (m_clientMode) {
@@ -108,14 +119,17 @@ namespace P2P {
     }
 
     constexpr ConnectionMode Client::GetConnectionMode() const {
+        ZoneScoped;
         return m_connectionMode;
     }
 
     constexpr void Client::SetConnectionMode(const ConnectionMode mode) {
+        ZoneScoped;
         m_connectionMode = mode;
     }
 
     void Client::AddHandler(MessageType type, const HandlerFunc func) {
+        ZoneScoped;
         m_handlers[static_cast<size_t>(type)] = func;
     }
 
@@ -125,6 +139,8 @@ namespace P2P {
         m_serverPort(serverPort), m_serverFileStreamPort(fileStreamPort), m_clientRole(role), m_contextWorkGuard(asio::make_work_guard(m_context)),
         m_packagesIn(100000) {
 
+        ZoneScoped;
+
         for (int i = 0; i < 1; i++) {
             m_threadPool.emplace_back([this]() {
                 m_context.run();
@@ -133,6 +149,7 @@ namespace P2P {
     }
 
     Client::~Client() {
+        ZoneScoped;
         m_context.stop();
         Disconnect();
 
@@ -144,6 +161,7 @@ namespace P2P {
     }
 
     void Client::CreateTLSConnection() {
+        ZoneScoped;
         static const std::filesystem::path certificatePath = "./certificates/";
 
         if (!TLS::CertificateManager::IsCertificateValid(certificatePath)) {
@@ -159,10 +177,12 @@ namespace P2P {
     }
 
     void Client::CreateTCPConnection() {
+        ZoneScoped;
         m_tcpConnection = TCPConnection<MessageType>::Create(m_context, m_packagesIn);
     }
 
     void Client::ConnectTCP(const ConnectionCallbackData callbackData) {
+        ZoneScoped;
         if (m_tcpConnection == nullptr) {
             CreateTCPConnection();
         }
@@ -180,10 +200,15 @@ namespace P2P {
             m_threadPool.emplace_back([this]() {
                 moodycamel::ConsumerToken token(m_packagesIn);
 
-                while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTING) {}
+                while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTING) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+
                 while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTED) {
                     if (std::unique_ptr<PackageIn<MessageType>> packageIn; m_packagesIn.try_dequeue(packageIn)) {
                         m_handlers[packageIn->Package->GetHeader().type](std::move(packageIn->Package));
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     }
                 }
             });
@@ -191,6 +216,7 @@ namespace P2P {
     }
 
     void Client::ConnectTLS(const ConnectionCallbackData callbackData) {
+        ZoneScoped;
         if (m_tlsConnection == nullptr) {
             CreateTLSConnection();
         }
@@ -208,10 +234,15 @@ namespace P2P {
             m_threadPool.emplace_back([this]() {
                 moodycamel::ConsumerToken token(m_packagesIn);
 
-                while (m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTING) {}
+                while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTING) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+
                 while (m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTED) {
                     if (std::unique_ptr<PackageIn<MessageType>> packageIn; m_packagesIn.try_dequeue(packageIn)) {
                         m_handlers[packageIn->Package->GetHeader().type](std::move(packageIn->Package));
+                    }  else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     }
                 }
             });
@@ -219,6 +250,7 @@ namespace P2P {
     }
 
     bool Client::IsTCPConnectionValid() const {
+        ZoneScoped;
         if (m_tcpConnection == nullptr) {
             return false;
         }
@@ -227,6 +259,7 @@ namespace P2P {
     }
 
     bool Client::IsTLSConnectionValid() const {
+        ZoneScoped;
         if (m_tlsConnection == nullptr) {
             return false;
         }
@@ -235,6 +268,7 @@ namespace P2P {
     }
 
     void Client::EnableAcceptors() {
+        ZoneScoped;
         m_connectionAcceptor.open(asio::ip::tcp::v4());
         m_connectionAcceptor.set_option(asio::socket_base::reuse_address(true));
         m_connectionAcceptor.bind(m_connectionEndpoint);
@@ -247,6 +281,7 @@ namespace P2P {
     }
 
     void Client::DisableAcceptors() {
+        ZoneScoped;
         if (m_connectionAcceptor.is_open()) {
             m_connectionAcceptor.close();
         }

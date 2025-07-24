@@ -12,10 +12,12 @@ public:
         : m_executor(executor), m_timer(executor), m_flag(false) {}
 
     void Reset() {
+        ZoneScoped;
         m_flag.store(false, std::memory_order_release);
     }
 
     void Signal() {
+        ZoneScoped;
         m_flag.store(true, std::memory_order_release);
         m_timer.cancel();
     }

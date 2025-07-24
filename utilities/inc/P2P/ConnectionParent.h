@@ -3,6 +3,7 @@
 
 #include <P2P/Common.h>
 #include <P2P/Package.h>
+#include <tracy/Tracy.hpp>
 
 #ifndef NO_DISCARD
 #define NO_DISCARD [[nodiscard]]

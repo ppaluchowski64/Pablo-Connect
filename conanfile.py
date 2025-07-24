@@ -16,6 +16,7 @@ class ConanApplication(ConanFile):
         "boost/*:without_contract": True,
         "boost/*:without_coroutine": True,
         "boost/*:without_date_time": False,
+        "boost/*:without_endian": False,
         "boost/*:without_exception": False,
         "boost/*:without_fiber": True,
         "boost/*:without_filesystem": True,
