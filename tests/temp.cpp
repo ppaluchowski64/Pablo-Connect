@@ -9,6 +9,7 @@ typedef std::unique_ptr<Package<P2P::MessageType>> PackageObj;
 
 
 void MessageH(PackageObj package) {
+    ZoneScoped;
     int text;
 
     package->GetValue(text);
@@ -16,8 +17,6 @@ void MessageH(PackageObj package) {
 }
 
 int main() {
-    ZoneScoped;
-
     try {
         const IPAddress ip = asio::ip::make_address_v4("127.0.0.1");
         constexpr uint16_t serverConnectionPort = 50000;
@@ -26,8 +25,8 @@ int main() {
         P2P::Client client(P2P::ClientRole::Client, ip, serverConnectionPort, serverFileStreamPort);
         P2P::Client server(P2P::ClientRole::Server, ip, serverConnectionPort, serverFileStreamPort);
 
-        client.SetClientMode(P2P::ClientMode::TCP_Client);
-        server.SetClientMode(P2P::ClientMode::TCP_Client);
+        client.SetClientMode(P2P::ClientMode::TLS_Client);
+        server.SetClientMode(P2P::ClientMode::TLS_Client);
 
         client.AddHandler(P2P::MessageType::message, MessageH);
         server.AddHandler(P2P::MessageType::message, MessageH);

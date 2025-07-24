@@ -105,17 +105,6 @@ namespace P2P {
     void Client::SetClientMode(const ClientMode mode) {
         ZoneScoped;
         m_clientMode = mode;
-
-        switch (m_clientMode) {
-        case ClientMode::TCP_Client:
-            CreateTCPConnection();
-            break;
-        case ClientMode::TLS_Client:
-            CreateTLSConnection();
-            break;
-        default:
-            break;
-        }
     }
 
     constexpr ConnectionMode Client::GetConnectionMode() const {
@@ -143,6 +132,7 @@ namespace P2P {
 
         for (int i = 0; i < 1; i++) {
             m_threadPool.emplace_back([this]() {
+                tracy::SetThreadName("asio::io_context thread ");
                 m_context.run();
             });
         }
@@ -198,6 +188,7 @@ namespace P2P {
 
         for (int i = 0; i < 1; i++) {
             m_threadPool.emplace_back([this]() {
+                tracy::SetThreadName("TCP package handler worker ");
                 moodycamel::ConsumerToken token(m_packagesIn);
 
                 while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTING) {
@@ -232,9 +223,10 @@ namespace P2P {
 
         for (int i = 0; i < 1; i++) {
             m_threadPool.emplace_back([this]() {
+                tracy::SetThreadName("TLS package handler worker ");
                 moodycamel::ConsumerToken token(m_packagesIn);
 
-                while (m_tcpConnection->GetConnectionState() == ConnectionState::CONNECTING) {
+                while (m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTING) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 }
 
