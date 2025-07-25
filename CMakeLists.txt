@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(head_pconnect LANGUAGES C CXX ASM)
+project(p_connect LANGUAGES C CXX ASM)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(ENABLE_TESTS ON)
 
 include(FetchContent)
+include(cmake/Tests.cmake)
 
 find_package(OpenSSL REQUIRED)
 find_package(asio    REQUIRED)
@@ -29,13 +31,7 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-        thread-safe-structs
-        GIT_REPOSITORY https://github.com/ddj4747/Thread-safe-structs.git
-        GIT_TAG main
-)
-
-FetchContent_Declare(
-        concurrentqueue-mc
+        concurrent_queue-mc
         GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
         GIT_TAG v1.0.4
 )
@@ -43,24 +39,23 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(google-test)
 FetchContent_MakeAvailable(google-benchmark)
 FetchContent_MakeAvailable(debug-log)
-FetchContent_MakeAvailable(thread-safe-structs)
-FetchContent_MakeAvailable(concurrentqueue-mc)
+FetchContent_MakeAvailable(concurrent_queue-mc)
 
 file(GLOB_RECURSE UTIL_SRC utilities/*)
-add_library(util_lib_pconnect STATIC ${UTIL_SRC})
-target_link_libraries(util_lib_pconnect PRIVATE openssl::openssl asio::asio Debug-Log custom_containers)
 
-target_compile_definitions(util_lib_pconnect PUBLIC
+add_library(util_lib_p_connect STATIC ${UTIL_SRC})
+target_link_libraries(util_lib_p_connect PRIVATE openssl::openssl asio::asio Debug-Log)
+
+target_compile_definitions(util_lib_p_connect PUBLIC
         $<$<CONFIG:Debug>:TRACY_ENABLE>
 )
-target_link_libraries(util_lib_pconnect PUBLIC
-        $<$<CONFIG:Debug>:Tracy::TracyClient>
+
+target_link_libraries(util_lib_p_connect PUBLIC
+        Tracy::TracyClient
 )
 
-target_include_directories(util_lib_pconnect PUBLIC utilities/inc/ ${concurrentqueue_SOURCE_DIR})
+target_include_directories(util_lib_p_connect PUBLIC utilities/inc/ ${concurrentqueue_SOURCE_DIR})
 
-add_executable(pawelek_test tests/pawelek_test.cpp)
-target_link_libraries(pawelek_test PRIVATE openssl::openssl asio::asio Debug-Log custom_containers util_lib_pconnect)
-
-add_executable(temp_test tests/temp.cpp)
-target_link_libraries(temp_test PRIVATE openssl::openssl asio::asio Debug-Log custom_containers util_lib_pconnect)
+if (ENABLE_TESTS)
+    BuildTests(Asio_Abstractions_Test asio-abstractions util_lib_p_connect)
+endif()

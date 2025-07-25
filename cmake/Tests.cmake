@@ -1,0 +1,16 @@
+include(GoogleTest)
+
+function(BuildTests ExecutableName PathInTestFolder)
+    file(GLOB_RECURSE TEST_FILES
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/${PathInTestFolder}/*.cpp
+    )
+
+    add_executable(${ExecutableName} ${TEST_FILES})
+
+    target_link_libraries(${ExecutableName} PRIVATE
+            ${ARGN}
+            gtest_main
+    )
+
+    gtest_discover_tests(${ExecutableName})
+endfunction()
