@@ -39,11 +39,11 @@ namespace P2P {
 
     class Client {
     public:
-        Client(ClientRole role, const IPAddress& address, uint16_t serverPort, uint16_t fileStreamPort);
+        Client();
         ~Client();
 
-        void Connect(ConnectionCallbackData callbackData = {nullptr, nullptr});
-        void Disconnect();
+        void Connect(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData = {nullptr, nullptr});
+        void Disconnect() const;
 
         void Send(std::unique_ptr<Package<MessageType>>&& message) const;
         template<StdLayoutOrVecOrString... Args>
@@ -55,10 +55,14 @@ namespace P2P {
         void RequestFile(const std::string& requestedFilePath, const std::string& fileName) const;
 
         void SetClientMode(ClientMode mode);
+        void SetClientRole(ClientRole role);
         constexpr void SetConnectionMode(ConnectionMode mode);
 
+
         NO_DISCARD constexpr ConnectionMode GetConnectionMode() const;
+        NO_DISCARD constexpr ClientRole GetClientRole() const;
         NO_DISCARD constexpr ClientMode GetClientMode() const;
+        NO_DISCARD ConnectionState GetConnectionState() const;
 
         void AddHandler(MessageType type, HandlerFunc func);
 
@@ -67,13 +71,10 @@ namespace P2P {
         constexpr static void DefaultCallback() {}
         void CreateTLSConnection();
         void CreateTCPConnection();
-        void ConnectTCP(ConnectionCallbackData callbackData);
-        void ConnectTLS(ConnectionCallbackData callbackData);
+        void ConnectTCP(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData);
+        void ConnectTLS(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData);
         bool IsTCPConnectionValid() const;
         bool IsTLSConnectionValid() const;
-
-        void EnableAcceptors();
-        void DisableAcceptors();
 
         IOContext                   m_context;
         std::shared_ptr<SSLContext> m_sslContext{nullptr};
@@ -81,16 +82,6 @@ namespace P2P {
         std::shared_ptr<TCPConnection<MessageType>> m_tcpConnection{nullptr};
         std::shared_ptr<TLSConnection<MessageType>> m_tlsConnection{nullptr};
         moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<MessageType>>> m_packagesIn;
-
-        TCPEndpoint m_connectionEndpoint;
-        TCPEndpoint m_fileStreamEndpoint;
-
-        TCPAcceptor m_connectionAcceptor;
-        TCPAcceptor m_fileStreamAcceptor;
-
-        IPAddress m_serverAddress;
-        uint16_t  m_serverPort;
-        uint16_t  m_serverFileStreamPort;
 
         ClientMode  m_clientMode        = ClientMode::None;
         ConnectionMode m_connectionMode = ConnectionMode::LocalNetwork;

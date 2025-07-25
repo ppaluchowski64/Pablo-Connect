@@ -44,14 +44,10 @@ FetchContent_MakeAvailable(concurrent_queue-mc)
 file(GLOB_RECURSE UTIL_SRC utilities/*)
 
 add_library(util_lib_p_connect STATIC ${UTIL_SRC})
-target_link_libraries(util_lib_p_connect PRIVATE openssl::openssl asio::asio Debug-Log)
+target_link_libraries(util_lib_p_connect PUBLIC openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
 
 target_compile_definitions(util_lib_p_connect PUBLIC
         $<$<CONFIG:Debug>:TRACY_ENABLE>
-)
-
-target_link_libraries(util_lib_p_connect PUBLIC
-        Tracy::TracyClient
 )
 
 target_include_directories(util_lib_p_connect PUBLIC utilities/inc/ ${concurrentqueue_SOURCE_DIR})

@@ -1,31 +1,27 @@
 #include <P2P/Client.h>
 #include <iostream>
 #include <tracy/Tracy.hpp>
+#include <array>
 
 
 namespace P2P {
-    void Client::Connect(const ConnectionCallbackData callbackData) {
+    void Client::Connect(std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
         ZoneScoped;
-
-        if (m_clientRole == ClientRole::Server) EnableAcceptors();
-        else                                    DisableAcceptors();
 
         switch (m_clientMode) {
         case ClientMode::TCP_Client:
-            ConnectTCP(callbackData);
+            ConnectTCP(std::move(address), ports, callbackData);
             break;
         case ClientMode::TLS_Client:
-            ConnectTLS(callbackData);
+            ConnectTLS(std::move(address), ports, callbackData);
             break;
         default:
             break;
         }
     }
 
-    void Client::Disconnect() {
+    void Client::Disconnect() const {
         ZoneScoped;
-
-        if (m_clientRole == ClientRole::Server) DisableAcceptors();
 
         switch (m_clientMode) {
         case ClientMode::TCP_Client:
@@ -107,6 +103,14 @@ namespace P2P {
         m_clientMode = mode;
     }
 
+    void Client::SetClientRole(const ClientRole role) {
+        m_clientRole = role;
+    }
+
+    constexpr ClientRole Client::GetClientRole() const {
+        return m_clientRole;
+    }
+
     constexpr ConnectionMode Client::GetConnectionMode() const {
         ZoneScoped;
         return m_connectionMode;
@@ -117,17 +121,31 @@ namespace P2P {
         m_connectionMode = mode;
     }
 
+    ConnectionState Client::GetConnectionState() const {
+        switch (m_clientMode) {
+        case ClientMode::TCP_Client:
+            if (m_tcpConnection == nullptr) {
+                return ConnectionState::DISCONNECTED;
+            }
+
+            return m_tcpConnection->GetConnectionState();
+        case ClientMode::TLS_Client:
+            if (m_tlsConnection == nullptr) {
+                return ConnectionState::DISCONNECTED;
+            }
+
+            return m_tlsConnection->GetConnectionState();
+        default:
+            return ConnectionState::DISCONNECTED;
+        }
+    }
+
     void Client::AddHandler(MessageType type, const HandlerFunc func) {
         ZoneScoped;
         m_handlers[static_cast<size_t>(type)] = func;
     }
 
-    Client::Client(const ClientRole role, const IPAddress& address, const uint16_t serverPort, const uint16_t fileStreamPort) :
-    m_connectionEndpoint(TCPEndpoint(address, serverPort)), m_fileStreamEndpoint(TCPEndpoint(address, fileStreamPort)),
-        m_connectionAcceptor(m_context), m_fileStreamAcceptor(m_context),
-        m_serverPort(serverPort), m_serverFileStreamPort(fileStreamPort), m_clientRole(role), m_contextWorkGuard(asio::make_work_guard(m_context)),
-        m_packagesIn(100000) {
-
+    Client::Client() : m_packagesIn(100000), m_clientMode(ClientMode::TLS_Client), m_clientRole(ClientRole::Client), m_contextWorkGuard(asio::make_work_guard(m_context)){
         ZoneScoped;
 
         for (int i = 0; i < 1; i++) {
@@ -140,8 +158,9 @@ namespace P2P {
 
     Client::~Client() {
         ZoneScoped;
-        m_context.stop();
+
         Disconnect();
+        m_context.stop();
 
         for (auto& thread : m_threadPool) {
             if (thread.joinable()) {
@@ -171,7 +190,7 @@ namespace P2P {
         m_tcpConnection = TCPConnection<MessageType>::Create(m_context, m_packagesIn);
     }
 
-    void Client::ConnectTCP(const ConnectionCallbackData callbackData) {
+    void Client::ConnectTCP(std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
         ZoneScoped;
         if (m_tcpConnection == nullptr) {
             CreateTCPConnection();
@@ -179,10 +198,10 @@ namespace P2P {
 
         switch (m_clientRole) {
         case ClientRole::Client:
-            m_tcpConnection->Start(m_connectionEndpoint, m_fileStreamEndpoint, callbackData);
+            m_tcpConnection->Start(std::move(address), ports, callbackData);
             break;
         case ClientRole::Server:
-            m_tcpConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, callbackData);
+            m_tcpConnection->Seek(std::move(address), ports, callbackData);
             break;
         }
 
@@ -206,7 +225,7 @@ namespace P2P {
         }
     }
 
-    void Client::ConnectTLS(const ConnectionCallbackData callbackData) {
+    void Client::ConnectTLS(std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
         ZoneScoped;
         if (m_tlsConnection == nullptr) {
             CreateTLSConnection();
@@ -214,10 +233,10 @@ namespace P2P {
 
         switch (m_clientRole) {
         case ClientRole::Client:
-            m_tlsConnection->Start(m_connectionEndpoint, m_fileStreamEndpoint, callbackData);
+            m_tlsConnection->Start(std::move(address), ports, callbackData);
             break;
         case ClientRole::Server:
-            m_tlsConnection->Seek(m_connectionAcceptor, m_fileStreamAcceptor, callbackData);
+            m_tlsConnection->Seek(std::move(address), ports, callbackData);
             break;
         }
 
@@ -257,29 +276,5 @@ namespace P2P {
         }
 
         return m_tlsConnection->GetConnectionState() == ConnectionState::CONNECTED;
-    }
-
-    void Client::EnableAcceptors() {
-        ZoneScoped;
-        m_connectionAcceptor.open(asio::ip::tcp::v4());
-        m_connectionAcceptor.set_option(asio::socket_base::reuse_address(true));
-        m_connectionAcceptor.bind(m_connectionEndpoint);
-        m_connectionAcceptor.listen();
-
-        m_fileStreamAcceptor.open(asio::ip::tcp::v4());
-        m_fileStreamAcceptor.set_option(asio::socket_base::reuse_address(true));
-        m_fileStreamAcceptor.bind(m_fileStreamEndpoint);
-        m_fileStreamAcceptor.listen();
-    }
-
-    void Client::DisableAcceptors() {
-        ZoneScoped;
-        if (m_connectionAcceptor.is_open()) {
-            m_connectionAcceptor.close();
-        }
-
-        if (m_fileStreamAcceptor.is_open()) {
-            m_fileStreamAcceptor.close();
-        }
     }
 }

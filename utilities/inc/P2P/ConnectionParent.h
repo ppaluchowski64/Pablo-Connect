@@ -13,8 +13,8 @@ template <PackageType T>
 class ConnectionParent {
 public:
     virtual ~ConnectionParent() = default;
-    virtual void Start(const TCPEndpoint& connectionEndpoint, const TCPEndpoint& fileStreamEndpoint, ConnectionCallbackData callbackData) = 0;
-    virtual void Seek(TCPAcceptor& connectionAcceptor, TCPAcceptor& fileStreamAcceptor, ConnectionCallbackData callbackData) = 0;
+    virtual void Start(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData) = 0;
+    virtual void Seek(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData) = 0;
     NO_DISCARD virtual ConnectionState GetConnectionState() const = 0;
     virtual void Send(std::unique_ptr<Package<T>>&& package) = 0;
     virtual void RequestFile(const std::string& requestedFilePath, const std::string& fileName) = 0;

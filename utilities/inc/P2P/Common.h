@@ -13,6 +13,7 @@ typedef uint16_t PackageTypeInt;
 typedef asio::io_context IOContext;
 typedef asio::ssl::context SSLContext;
 typedef asio::ip::tcp::socket TCPSocket;
+typedef asio::ip::tcp::resolver TCPResolver;
 typedef asio::ssl::stream<asio::ip::tcp::socket> SSLSocket;
 typedef asio::ip::tcp::endpoint TCPEndpoint;
 typedef asio::ip::tcp::acceptor TCPAcceptor;
