@@ -22,19 +22,8 @@ namespace P2P {
     using HandlerFunc = void(*)(std::unique_ptr<Package<MessageType>>);
 
     enum class ClientMode : uint8_t {
-        None,
         TCP_Client,
         TLS_Client
-    };
-
-    enum class ClientRole : uint8_t {
-        Client,
-        Server
-    };
-
-    enum class ConnectionMode : uint8_t {
-        LocalNetwork,
-        GlobalNetwork
     };
 
     class Client {
@@ -42,7 +31,9 @@ namespace P2P {
         Client();
         ~Client();
 
-        void Connect(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData = {nullptr, nullptr});
+        //void SeekConnection(ConnectionCallbackData callbackData = {nullptr, nullptr});
+        void SeekLocalConnection(ConnectionCallbackData callbackData = {nullptr, nullptr});
+        void Connect(IPAddress address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData = {nullptr, nullptr});
         void Disconnect() const;
 
         void Send(std::unique_ptr<Package<MessageType>>&& message) const;
@@ -55,37 +46,26 @@ namespace P2P {
         void RequestFile(const std::string& requestedFilePath, const std::string& fileName) const;
 
         void SetClientMode(ClientMode mode);
-        void SetClientRole(ClientRole role);
-        constexpr void SetConnectionMode(ConnectionMode mode);
 
-
-        NO_DISCARD constexpr ConnectionMode GetConnectionMode() const;
-        NO_DISCARD constexpr ClientRole GetClientRole() const;
-        NO_DISCARD constexpr ClientMode GetClientMode() const;
+        NO_DISCARD ClientMode GetClientMode() const;
         NO_DISCARD ConnectionState GetConnectionState() const;
+        NO_DISCARD IPAddress GetConnectionAddress() const;
+        NO_DISCARD std::array<uint16_t, 2> GetConnectionPorts() const;
 
         void AddHandler(MessageType type, HandlerFunc func);
 
 
     private:
-        constexpr static void DefaultCallback() {}
-        void CreateTLSConnection();
+        void CreateTLSConnection(bool isServer);
         void CreateTCPConnection();
-        void ConnectTCP(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData);
-        void ConnectTLS(std::string&& address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData);
-        bool IsTCPConnectionValid() const;
-        bool IsTLSConnectionValid() const;
 
         IOContext                   m_context;
         std::shared_ptr<SSLContext> m_sslContext{nullptr};
 
-        std::shared_ptr<TCPConnection<MessageType>> m_tcpConnection{nullptr};
-        std::shared_ptr<TLSConnection<MessageType>> m_tlsConnection{nullptr};
+        std::shared_ptr<ConnectionParent<MessageType>> m_connection{nullptr};
         moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<MessageType>>> m_packagesIn;
 
-        ClientMode  m_clientMode        = ClientMode::None;
-        ConnectionMode m_connectionMode = ConnectionMode::LocalNetwork;
-        ClientRole m_clientRole         = ClientRole::Client;
+        ClientMode  m_clientMode;
 
         asio::executor_work_guard<asio::io_context::executor_type> m_contextWorkGuard;
         std::vector<std::thread> m_threadPool;

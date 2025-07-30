@@ -14,32 +14,38 @@ public:
     TCPConnection(IOContext& sharedContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue) :
         m_context(sharedContext), m_socket(sharedContext), m_fileStreamSocket(sharedContext), m_resolver(m_context),
         m_sendMessageAwaitableFlag(sharedContext.get_executor()), m_sendFileAwaitableFlag(sharedContext.get_executor()),
-        m_receiveFileAwaitableFlag(sharedContext.get_executor()), m_connectionState(ConnectionState::DISCONNECTED), m_inQueue(sharedMessageQueue) { }
+        m_receiveFileAwaitableFlag(sharedContext.get_executor()), m_connectionState(ConnectionState::DISCONNECTED), m_inQueue(sharedMessageQueue), m_ports({0, 0}) { }
 
     static NO_DISCARD std::shared_ptr<TCPConnection<T>> Create(IOContext& sharedContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue) {
         return std::make_shared<TCPConnection<T>>(sharedContext, sharedMessageQueue);
     }
 
-    void Start(std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
+    void Start(const IPAddress address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
         ZoneScoped;
         if (GetConnectionState() != ConnectionState::DISCONNECTED) {
             Debug::LogError("Connection already started");
             return;
         }
 
+        m_address = address;
+        m_ports = ports;
+
         std::shared_ptr<TCPConnection<T>> connection = this->shared_from_this();
-        asio::co_spawn(m_context, CoStart(connection, std::move(address), ports, callbackData), asio::detached);
+        asio::co_spawn(m_context, CoStart(connection, callbackData), asio::detached);
     }
 
-    void Seek(std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
+    void Seek(const IPAddress address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
         ZoneScoped;
         if (GetConnectionState() != ConnectionState::DISCONNECTED) {
             Debug::LogError("Connection already started");
             return;
         }
 
+        m_address = address;
+        m_ports = ports;
+
         std::shared_ptr<TCPConnection<T>> connection = this->shared_from_this();
-        asio::co_spawn(m_context, CoSeek(connection, std::move(address), std::move(ports), callbackData), asio::detached);
+        asio::co_spawn(m_context, CoSeek(connection, callbackData), asio::detached);
     }
 
     NO_DISCARD ConnectionState GetConnectionState() const override {
@@ -95,19 +101,21 @@ public:
         m_sendFileAwaitableFlag.Signal();
     }
 
+    NO_DISCARD IPAddress GetAddress() const override {
+        return m_address;
+    }
+
+    NO_DISCARD std::array<uint16_t, 2> GetPorts() const override {
+        return m_ports;
+    }
+
 private:
-    static asio::awaitable<void> CoStart(std::shared_ptr<TCPConnection<T>> connection, std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
+    static asio::awaitable<void> CoStart(std::shared_ptr<TCPConnection<T>> connection, const ConnectionCallbackData callbackData) {
         try {
             connection->SetConnectionState(ConnectionState::CONNECTING);
 
-            auto connectionEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[0]));
-            auto fileStreamEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[1]));
-
-            if (connectionEndpoints.empty() || fileStreamEndpoints.empty()) {
-                Debug::LogError("Failed to resolve one or more endpoints.");
-                connection->Disconnect();
-                co_return;
-            }
+            std::initializer_list<TCPEndpoint> connectionEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[0])};
+            std::initializer_list<TCPEndpoint> fileStreamEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[1])};
 
             co_await asio::async_connect(connection->m_socket, connectionEndpoints, asio::use_awaitable);
             co_await asio::async_connect(connection->m_fileStreamSocket, fileStreamEndpoints, asio::use_awaitable);
@@ -135,21 +143,18 @@ private:
         }
     }
 
-    static asio::awaitable<void> CoSeek(std::shared_ptr<TCPConnection<T>> connection, std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
+    static asio::awaitable<void> CoSeek(std::shared_ptr<TCPConnection<T>> connection, const ConnectionCallbackData callbackData) {
         try {
             connection->SetConnectionState(ConnectionState::CONNECTING);
 
-            auto connectionEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[0]));
-            auto fileStreamEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[1]));
-
-            if (connectionEndpoints.empty() || fileStreamEndpoints.empty()) {
-                Debug::LogError("Failed to resolve one or more endpoints.");
-                connection->Disconnect();
-                co_return;
-            }
+            std::initializer_list<TCPEndpoint> connectionEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[0])};
+            std::initializer_list<TCPEndpoint> fileStreamEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[1])};
 
             TCPAcceptor connectionAcceptor(connection->m_context, *connectionEndpoints.begin());
             TCPAcceptor fileStreamAcceptor(connection->m_context, *fileStreamEndpoints.begin());
+
+            connection->m_address = connectionAcceptor.local_endpoint().address();
+            connection->m_ports   = {connectionAcceptor.local_endpoint().port(), fileStreamAcceptor.local_endpoint().port()};
 
             co_await connectionAcceptor.async_accept(connection->m_socket, asio::use_awaitable);
             co_await fileStreamAcceptor.async_accept(connection->m_fileStreamSocket, asio::use_awaitable);
@@ -391,7 +396,8 @@ private:
     moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_fileInfoQueue;
     moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& m_inQueue;
 
-
+    IPAddress               m_address;
+    std::array<uint16_t, 2> m_ports;
 };
 
 #endif //P2P_TCP_CONNECTION_H

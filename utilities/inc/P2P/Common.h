@@ -6,6 +6,7 @@
 #include <vector>
 #include <asio.hpp>
 #include <asio/ssl.hpp>
+#include <DebugLog.h>
 
 typedef uint32_t PackageSizeInt;
 typedef uint16_t PackageTypeInt;

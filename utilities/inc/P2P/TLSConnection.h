@@ -15,7 +15,7 @@ public:
     TLSConnection(IOContext& sharedContext, std::shared_ptr<SSLContext> sharedSSLContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue)
         : m_context(sharedContext), m_sslContext(std::move(sharedSSLContext)), m_socket(m_context, *m_sslContext), m_fileStreamSocket(m_context, *m_sslContext), m_resolver(m_context),
           m_sendMessageAwaitableFlag(m_context.get_executor()), m_sendFileAwaitableFlag(m_context.get_executor()), m_receiveFileAwaitableFlag(m_context.get_executor()),
-          m_inQueue(sharedMessageQueue)
+          m_inQueue(sharedMessageQueue), m_ports({0, 0})
     { }
 
     static NO_DISCARD std::shared_ptr<SSLContext> CreateSSLContext(const std::filesystem::path& path, const bool isServer) {
@@ -43,26 +43,32 @@ public:
         return std::make_shared<TLSConnection<T>>(sharedContext, sharedSSLContext, sharedMessageQueue);
     }
 
-    void Start(std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
+    void Start(const IPAddress address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
         ZoneScoped;
         if (GetConnectionState() != ConnectionState::DISCONNECTED) {
             Debug::LogError("Connection already started");
             return;
         }
 
+        m_address = address;
+        m_ports = ports;
+
         std::shared_ptr<TLSConnection<T>> connection = this->shared_from_this();
-        asio::co_spawn(m_context, CoStart(connection, std::move(address), ports, callbackData), asio::detached);
+        asio::co_spawn(m_context, CoStart(connection, callbackData), asio::detached);
     }
 
-    void Seek(std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
+    void Seek(const IPAddress address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
         ZoneScoped;
         if (GetConnectionState() != ConnectionState::DISCONNECTED) {
             Debug::LogError("Connection already started");
             return;
         }
 
+        m_address = address;
+        m_ports = ports;
+
         std::shared_ptr<TLSConnection<T>> connection = this->shared_from_this();
-        asio::co_spawn(m_context, CoSeek(connection, std::move(address), ports, callbackData), asio::detached);
+        asio::co_spawn(m_context, CoSeek(connection, callbackData), asio::detached);
     }
 
     NO_DISCARD ConnectionState GetConnectionState() const override {
@@ -91,19 +97,21 @@ public:
         asio::co_spawn(m_context, CoDisconnect(connection), asio::detached);
     }
 
+    NO_DISCARD IPAddress GetAddress() const override {
+        return m_address;
+    }
+
+    NO_DISCARD std::array<uint16_t, 2> GetPorts() const override {
+        return m_ports;
+    }
+
 private:
-    static asio::awaitable<void> CoStart(std::shared_ptr<TLSConnection<T>> connection, std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
+    static asio::awaitable<void> CoStart(std::shared_ptr<TLSConnection<T>> connection, const ConnectionCallbackData callbackData) {
         try {
             connection->SetConnectionState(ConnectionState::CONNECTING);
 
-            auto connectionEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[0]));
-            auto fileStreamEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[1]));
-
-            if (connectionEndpoints.empty() || fileStreamEndpoints.empty()) {
-                Debug::LogError("Failed to resolve one or more endpoints.");
-                connection->Disconnect();
-                co_return;
-            }
+            std::initializer_list<TCPEndpoint> connectionEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[0])};
+            std::initializer_list<TCPEndpoint> fileStreamEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[1])};
 
             co_await asio::async_connect(connection->m_socket.lowest_layer(), connectionEndpoints, asio::use_awaitable);
             co_await connection->m_socket.async_handshake(SSLStreamBase::client, asio::use_awaitable);
@@ -133,21 +141,18 @@ private:
         }
     }
 
-    static asio::awaitable<void> CoSeek(std::shared_ptr<TLSConnection<T>> connection, std::string&& address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
+    static asio::awaitable<void> CoSeek(std::shared_ptr<TLSConnection<T>> connection, const ConnectionCallbackData callbackData) {
         try {
             connection->SetConnectionState(ConnectionState::CONNECTING);
 
-            auto connectionEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[0]));
-            auto fileStreamEndpoints = co_await connection->m_resolver.async_resolve(address, std::to_string(ports[1]));
-
-            if (connectionEndpoints.empty() || fileStreamEndpoints.empty()) {
-                Debug::LogError("Failed to resolve one or more endpoints.");
-                connection->Disconnect();
-                co_return;
-            }
+            std::initializer_list<TCPEndpoint> connectionEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[0])};
+            std::initializer_list<TCPEndpoint> fileStreamEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[1])};
 
             TCPAcceptor connectionAcceptor(connection->m_context, *connectionEndpoints.begin());
             TCPAcceptor fileStreamAcceptor(connection->m_context, *fileStreamEndpoints.begin());
+
+            connection->m_address = connectionAcceptor.local_endpoint().address();
+            connection->m_ports   = {connectionAcceptor.local_endpoint().port(), fileStreamAcceptor.local_endpoint().port()};
 
             co_await connectionAcceptor.async_accept(connection->m_socket.lowest_layer(), asio::use_awaitable);
             co_await connection->m_socket.async_handshake(SSLStreamBase::server, asio::use_awaitable);
@@ -180,18 +185,18 @@ private:
     static asio::awaitable<void> CoDisconnect(std::shared_ptr<TLSConnection<T>> connection) {
         asio::error_code errorCode;
 
+        if (connection->GetConnectionState() != ConnectionState::CONNECTED) {
+            co_return;
+        }
+
+        if (!connection->m_socket.lowest_layer().is_open() && !connection->m_fileStreamSocket.lowest_layer().is_open()) {
+            connection->SetConnectionState(ConnectionState::DISCONNECTED);
+            co_return;
+        }
+
+        connection->SetConnectionState(ConnectionState::DISCONNECTING);
+
         try {
-            if (connection->GetConnectionState() == ConnectionState::DISCONNECTED) {
-                co_return;
-            }
-
-            if (!connection->m_socket.lowest_layer().is_open() && !connection->m_fileStreamSocket.lowest_layer().is_open()) {
-                connection->SetConnectionState(ConnectionState::DISCONNECTED);
-                co_return;
-            }
-
-            connection->SetConnectionState(ConnectionState::DISCONNECTING);
-
             if (connection->m_socket.lowest_layer().is_open()) {
                 co_await connection->m_socket.async_shutdown(asio::use_awaitable);
             }
@@ -199,9 +204,17 @@ private:
             if (connection->m_fileStreamSocket.lowest_layer().is_open()) {
                 co_await connection->m_fileStreamSocket.async_shutdown(asio::use_awaitable);
             }
-
         } catch (const std::system_error& error) {
-            Debug::LogError(error.what());
+            if (error.code() == asio::error::eof ||
+                error.code() == asio::error::connection_reset ||
+                error.code() == asio::error::operation_aborted ||
+                error.code() == asio::error::connection_aborted ||
+                error.code() == asio::error::broken_pipe ||
+                error.code() == asio::ssl::error::stream_truncated) {
+                Debug::Log("Graceful shutdown failed as connection was already closing: {}", error.what());
+            } else {
+                Debug::LogError("Unexpected error during socket shutdown: {}", error.what());
+            }
         }
 
         if (connection->m_socket.lowest_layer().is_open()) {
@@ -442,6 +455,9 @@ private:
     moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_fileRequestQueue;
     moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_fileInfoQueue;
     moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& m_inQueue;
+
+    IPAddress             m_address;
+    std::array<uint16_t, 2> m_ports;
 };
 
 #endif //P2P_TLS_CONNECTION_H
