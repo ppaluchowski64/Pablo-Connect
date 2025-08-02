@@ -32,7 +32,7 @@ namespace P2P {
         ~Client();
 
         //void SeekConnection(ConnectionCallbackData callbackData = {nullptr, nullptr});
-        void SeekLocalConnection(ConnectionCallbackData callbackData = {nullptr, nullptr});
+        void SeekLocalConnection(ConnectionSeekCallbackData connectionSeekCallbackData = {nullptr, nullptr}, ConnectionCallbackData callbackData = {nullptr, nullptr});
         void Connect(IPAddress address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData = {nullptr, nullptr});
         void Disconnect() const;
 

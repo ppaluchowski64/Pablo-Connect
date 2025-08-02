@@ -14,7 +14,7 @@ class ConnectionParent {
 public:
     virtual ~ConnectionParent() = default;
     virtual void Start(IPAddress address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData) = 0;
-    virtual void Seek(IPAddress address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData) = 0;
+    virtual void Seek(IPAddress address, std::array<uint16_t, 2> ports, ConnectionSeekCallbackData connectionSeekCallbackData, ConnectionCallbackData callbackData) = 0;
     NO_DISCARD virtual ConnectionState GetConnectionState() const = 0;
     virtual void Send(std::unique_ptr<Package<T>>&& package) = 0;
     virtual void RequestFile(const std::string& requestedFilePath, const std::string& fileName) = 0;

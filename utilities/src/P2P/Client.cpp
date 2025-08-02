@@ -44,7 +44,7 @@ namespace P2P {
     //     m_connection->Seek(callbackData);
     // }
 
-    void Client::SeekLocalConnection(ConnectionCallbackData callbackData) {
+    void Client::SeekLocalConnection(const ConnectionSeekCallbackData connectionSeekCallbackData, const ConnectionCallbackData callbackData) {
         ZoneScoped;
 
         const IPAddress ipAddress = AddressResolver::GetPrivateIPv4();
@@ -59,7 +59,7 @@ namespace P2P {
             CreateTLSConnection(true);
         }
 
-        m_connection->Seek(ipAddress, {0, 0}, {nullptr, nullptr});
+        m_connection->Seek(ipAddress, {0, 0}, connectionSeekCallbackData, callbackData);
     }
 
 

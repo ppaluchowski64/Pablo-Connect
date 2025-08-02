@@ -57,7 +57,7 @@ public:
         asio::co_spawn(m_context, CoStart(connection, callbackData), asio::detached);
     }
 
-    void Seek(const IPAddress address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) override {
+    void Seek(const IPAddress address, const std::array<uint16_t, 2> ports, const ConnectionSeekCallbackData connectionSeekCallbackData, const ConnectionCallbackData callbackData) override {
         ZoneScoped;
         if (GetConnectionState() != ConnectionState::DISCONNECTED) {
             Debug::LogError("Connection already started");
@@ -68,7 +68,7 @@ public:
         m_ports = ports;
 
         std::shared_ptr<TLSConnection<T>> connection = this->shared_from_this();
-        asio::co_spawn(m_context, CoSeek(connection, callbackData), asio::detached);
+        asio::co_spawn(m_context, CoSeek(connection, connectionSeekCallbackData, callbackData), asio::detached);
     }
 
     NO_DISCARD ConnectionState GetConnectionState() const override {
@@ -141,7 +141,7 @@ private:
         }
     }
 
-    static asio::awaitable<void> CoSeek(std::shared_ptr<TLSConnection<T>> connection, const ConnectionCallbackData callbackData) {
+    static asio::awaitable<void> CoSeek(std::shared_ptr<TLSConnection<T>> connection, const ConnectionSeekCallbackData connectionSeekCallbackData, const ConnectionCallbackData callbackData) {
         try {
             connection->SetConnectionState(ConnectionState::CONNECTING);
 
@@ -153,6 +153,10 @@ private:
 
             connection->m_address = connectionAcceptor.local_endpoint().address();
             connection->m_ports   = {connectionAcceptor.local_endpoint().port(), fileStreamAcceptor.local_endpoint().port()};
+
+            if (connectionSeekCallbackData.callback != nullptr) {
+                connectionSeekCallbackData.callback(connectionSeekCallbackData.data);
+            }
 
             co_await connectionAcceptor.async_accept(connection->m_socket.lowest_layer(), asio::use_awaitable);
             co_await connection->m_socket.async_handshake(SSLStreamBase::server, asio::use_awaitable);
