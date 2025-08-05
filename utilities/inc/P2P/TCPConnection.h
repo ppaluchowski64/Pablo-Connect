@@ -111,35 +111,51 @@ public:
 
 private:
     static asio::awaitable<void> CoStart(std::shared_ptr<TCPConnection<T>> connection, const ConnectionCallbackData callbackData) {
-        try {
-            connection->SetConnectionState(ConnectionState::CONNECTING);
+        while (true) {
+            try {
+                connection->SetConnectionState(ConnectionState::CONNECTING);
 
-            std::initializer_list<TCPEndpoint> connectionEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[0])};
-            std::initializer_list<TCPEndpoint> fileStreamEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[1])};
+                std::initializer_list<TCPEndpoint> connectionEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[0])};
+                std::initializer_list<TCPEndpoint> fileStreamEndpoints = {TCPEndpoint(connection->m_address, connection->m_ports[1])};
 
-            co_await asio::async_connect(connection->m_socket, connectionEndpoints, asio::use_awaitable);
-            co_await asio::async_connect(connection->m_fileStreamSocket, fileStreamEndpoints, asio::use_awaitable);
+                co_await asio::async_connect(connection->m_socket, connectionEndpoints, asio::use_awaitable);
+                co_await asio::async_connect(connection->m_fileStreamSocket, fileStreamEndpoints, asio::use_awaitable);
 
-            Debug::Log("Accepted TCP connection to {}:{}, {}:{}",
-                  connection->m_socket.remote_endpoint().address().to_string(),
-                  std::to_string(connection->m_socket.remote_endpoint().port()),
-                  connection->m_fileStreamSocket.remote_endpoint().address().to_string(),
-                  std::to_string(connection->m_fileStreamSocket.remote_endpoint().port()));
+                Debug::Log("Accepted TCP connection to {}:{}, {}:{}",
+                      connection->m_socket.remote_endpoint().address().to_string(),
+                      std::to_string(connection->m_socket.remote_endpoint().port()),
+                      connection->m_fileStreamSocket.remote_endpoint().address().to_string(),
+                      std::to_string(connection->m_fileStreamSocket.remote_endpoint().port()));
 
-            connection->SetConnectionState(ConnectionState::CONNECTED);
+                connection->SetConnectionState(ConnectionState::CONNECTED);
 
-            asio::co_spawn(connection->m_context, CoReceiveMessage(connection), asio::detached);
-            asio::co_spawn(connection->m_context, CoReceiveFile(connection), asio::detached);
-            asio::co_spawn(connection->m_context, CoSendFile(connection), asio::detached);
-            asio::co_spawn(connection->m_context, CoSendMessage(connection), asio::detached);
+                asio::co_spawn(connection->m_context, CoReceiveMessage(connection), asio::detached);
+                asio::co_spawn(connection->m_context, CoReceiveFile(connection), asio::detached);
+                asio::co_spawn(connection->m_context, CoSendFile(connection), asio::detached);
+                asio::co_spawn(connection->m_context, CoSendMessage(connection), asio::detached);
 
-            if (callbackData.callback != nullptr) {
-                callbackData.callback(callbackData.data);
+                if (callbackData.callback != nullptr) {
+                    callbackData.callback(callbackData.data);
+                }
+            } catch (const std::system_error& error) {
+                const asio::error_code errorCode = error.code();
+
+                if (errorCode == asio::error::eof ||
+                    errorCode == asio::error::connection_reset ||
+                    errorCode == asio::error::connection_aborted ||
+                    errorCode == asio::error::connection_refused ||
+                    errorCode == asio::error::host_unreachable ||
+                    errorCode == asio::error::network_unreachable ||
+                    errorCode == asio::error::timed_out ||
+                    errorCode == asio::error::broken_pipe) {
+                    continue;
+                }
+
+                Debug::LogError(errorCode.message());
+                connection->Disconnect();
             }
 
-        } catch (const std::system_error& error) {
-            Debug::LogError(error.what());
-            connection->Disconnect();
+            break;
         }
     }
 
