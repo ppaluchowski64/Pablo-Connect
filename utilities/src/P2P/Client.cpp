@@ -44,7 +44,7 @@ namespace P2P {
     //     m_connection->Seek(callbackData);
     // }
 
-    void Client::SeekLocalConnection(const ConnectionSeekCallbackData connectionSeekCallbackData, const ConnectionCallbackData callbackData) {
+    void Client::SeekLocalConnection(const std::function<void(void)> connectionSeekCallback, const std::function<void(void)> callback) {
         ZoneScoped;
 
         const IPAddress ipAddress = AddressResolver::GetPrivateIPv4();
@@ -59,11 +59,11 @@ namespace P2P {
             CreateTLSConnection(true);
         }
 
-        m_connection->Seek(ipAddress, {0, 0}, connectionSeekCallbackData, callbackData);
+        m_connection->Seek(ipAddress, {0, 0}, connectionSeekCallback, callback);
     }
 
 
-    void Client::Connect(const IPAddress address, const std::array<uint16_t, 2> ports, const ConnectionCallbackData callbackData) {
+    void Client::Connect(const IPAddress address, const std::array<uint16_t, 2> ports, const std::function<void(void)> callback) {
         ZoneScoped;
         if (m_clientMode == ClientMode::TCP_Client) {
             CreateTCPConnection();
@@ -71,7 +71,7 @@ namespace P2P {
             CreateTLSConnection(false);
         }
 
-        m_connection->Start(address, ports, callbackData);
+        m_connection->Start(address, ports, callback);
     }
 
     void Client::Disconnect() const {
@@ -130,9 +130,9 @@ namespace P2P {
         return m_connection->GetPorts();
     }
 
-    void Client::AddHandler(MessageType type, const HandlerFunc func) {
+    void Client::AddHandler(MessageType type, const std::function<void(std::unique_ptr<Package<MessageType>>)>& handler) {
         ZoneScoped;
-        m_handlers[static_cast<size_t>(type)] = func;
+        m_handlers[static_cast<size_t>(type)] = handler;
     }
 
     void Client::CreateTLSConnection(const bool isServer) {

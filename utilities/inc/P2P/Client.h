@@ -32,8 +32,8 @@ namespace P2P {
         ~Client();
 
         //void SeekConnection(ConnectionCallbackData callbackData = {nullptr, nullptr});
-        void SeekLocalConnection(ConnectionSeekCallbackData connectionSeekCallbackData = {nullptr, nullptr}, ConnectionCallbackData callbackData = {nullptr, nullptr});
-        void Connect(IPAddress address, std::array<uint16_t, 2> ports, ConnectionCallbackData callbackData = {nullptr, nullptr});
+        void SeekLocalConnection(std::function<void()> connectionSeekCallback = std::function<void()>{}, std::function<void()> callback = std::function<void()>{});
+        void Connect(IPAddress address, std::array<uint16_t, 2> ports, std::function<void()> callback = std::function<void()>{});
         void Disconnect() const;
 
         void Send(std::unique_ptr<Package<MessageType>>&& message) const;
@@ -52,7 +52,7 @@ namespace P2P {
         NO_DISCARD IPAddress GetConnectionAddress() const;
         NO_DISCARD std::array<uint16_t, 2> GetConnectionPorts() const;
 
-        void AddHandler(MessageType type, HandlerFunc func);
+        void AddHandler(MessageType type, const std::function<void(std::unique_ptr<Package<MessageType>>)>& handler);
 
 
     private:
@@ -70,7 +70,7 @@ namespace P2P {
         asio::executor_work_guard<asio::io_context::executor_type> m_contextWorkGuard;
         std::vector<std::thread> m_threadPool;
 
-        HandlerFunc m_handlers[static_cast<uint64_t>(MessageType::COUNT)] = {nullptr};
+        std::function<void(std::unique_ptr<Package<MessageType>>)> m_handlers[static_cast<uint64_t>(MessageType::COUNT)] = {nullptr};
 
     };
 }

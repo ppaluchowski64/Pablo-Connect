@@ -57,19 +57,4 @@ enum class ConnectionState : uint8_t {
     DISCONNECTING
 };
 
-using ConnectionCallback = void(*)(void*);
-using ConnectionSeekCallback = void(*)(void*);
-
-#define DisableConnectionCallback {nullptr, nullptr};
-
-struct ConnectionCallbackData {
-    ConnectionCallback callback; // If it's nullptr, then callback is ignored
-    void* data;                  // Can be nullptr
-};
-
-struct ConnectionSeekCallbackData {
-    ConnectionSeekCallback callback; // If it's nullptr, then callback is ignored
-    void* data;                      // Can be nullptr
-};
-
 #endif //TCP_TLS_COMMON_H

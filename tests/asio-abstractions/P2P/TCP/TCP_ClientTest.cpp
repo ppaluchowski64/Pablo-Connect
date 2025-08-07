@@ -1,9 +1,6 @@
 #include <gtest/gtest.h>
 #include <P2P/Client.h>
 
-static void CallbackConnectionTest(void* data) {
-    static_cast<std::atomic<bool>*>(data)->store(true);
-}
 
 TEST(TCP_Test, ConnectionTest) {
     P2P::Client client1, client2;
@@ -13,11 +10,9 @@ TEST(TCP_Test, ConnectionTest) {
 
     std::atomic<bool> ptr = false;
 
-    ConnectionSeekCallbackData data;
-    data.callback = CallbackConnectionTest;
-    data.data = &ptr;
-
-    client1.SeekLocalConnection(data);
+    client1.SeekLocalConnection([&ptr]() {
+        ptr.store(true);
+    });
 
     while (!ptr.load()) {}
 
