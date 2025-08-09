@@ -7,7 +7,7 @@
 
 static std::vector<std::future<void>> leaked_futures;
 
-TEST(TCP_Test, DataTransferTest_SimplePackage) {
+TEST(TLS_Test, DataTransferTest_SimplePackage) {
     auto future = std::async(std::launch::async, [] {
         std::array<uint16_t, 2> ports{};
         asio::ip::address address{};
@@ -18,7 +18,7 @@ TEST(TCP_Test, DataTransferTest_SimplePackage) {
 
         std::thread clientThread([&]() {
             P2P::Client client;
-            client.SetClientMode(P2P::ClientMode::TCP_Client);
+            client.SetClientMode(P2P::ClientMode::TLS_Client);
 
             client.AddHandler(P2P::MessageType::message, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
                 std::string value;
@@ -40,12 +40,12 @@ TEST(TCP_Test, DataTransferTest_SimplePackage) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            client.Disconnect();
         });
 
         std::thread serverThread([&]() {
             P2P::Client server;
-            server.SetClientMode(P2P::ClientMode::TCP_Client);
+            server.SetClientMode(P2P::ClientMode::TLS_Client);
 
             server.AddHandler(P2P::MessageType::message, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
                 std::string value;
@@ -76,12 +76,11 @@ TEST(TCP_Test, DataTransferTest_SimplePackage) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            server.Disconnect();
         });
 
         serverThread.join();
         clientThread.join();
-
     });
 
     if (future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {

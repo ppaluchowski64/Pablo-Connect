@@ -204,9 +204,10 @@ private:
             moodycamel::ProducerToken fileInfoToken(connection->m_fileInfoQueue);
 
             while (connection->GetConnectionState() == ConnectionState::CONNECTED) {
-                asio::mutable_buffer headerBuffer(&header, sizeof(header));
-
+                asio::mutable_buffer headerBuffer(&header, sizeof(PackageHeader));
                 co_await asio::async_read(connection->m_socket, headerBuffer, asio::use_awaitable);
+
+                header.FromBigEndianToNative();
 
                 std::unique_ptr<Package<T>> package = std::make_unique<Package<T>>(header);
                 asio::mutable_buffer packageBuffer(package->GetRawBody(), header.size);
@@ -222,6 +223,7 @@ private:
                 if ((header.flags & PackageFlag::FILE_REQUEST) != 0) {
                     connection->m_fileRequestQueue.enqueue(fileRequestToken, std::move(package));
                     connection->m_sendFileAwaitableFlag.Signal();
+                    continue;
                 }
 
                 std::unique_ptr<PackageIn<T>> packageIn = std::make_unique<PackageIn<T>>();
@@ -300,13 +302,14 @@ private:
 
             while (connection->GetConnectionState() == ConnectionState::CONNECTED) {
                 if (std::unique_ptr<Package<T>> package; connection->m_outQueue.try_dequeue(outQueueToken, package)) {
-                    const PackageHeader header = package->GetHeader();
+                    PackageHeader header = package->GetHeader();
 
                     std::vector<asio::const_buffer> buffers = {
                         asio::const_buffer(&header, sizeof(header)),
                         asio::const_buffer(package->GetRawBody(), header.size)
                     };
 
+                    header.FromNativeToBigEndian();
                     co_await asio::async_write(connection->m_socket, buffers, asio::use_awaitable);
                 } else {
                     connection->m_sendMessageAwaitableFlag.Reset();

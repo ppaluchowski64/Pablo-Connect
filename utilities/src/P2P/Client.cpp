@@ -11,6 +11,8 @@ namespace P2P {
     Client::Client(): m_clientMode(ClientMode::TLS_Client), m_contextWorkGuard(m_context.get_executor()) {
         ZoneScoped;
 
+        HandleIncomingPackages();
+
         for (int i = 0; i < ASIO_THREAD_COUNT; i++) {
             m_threadPool.emplace_back([this]() {
                m_context.run();
@@ -23,6 +25,7 @@ namespace P2P {
 
         m_contextWorkGuard.reset();
         m_context.stop();
+        m_destroyThreads = true;
 
         Disconnect();
 
@@ -130,7 +133,7 @@ namespace P2P {
         return m_connection->GetPorts();
     }
 
-    void Client::AddHandler(MessageType type, const std::function<void(std::unique_ptr<Package<MessageType>>)>& handler) {
+    void Client::AddHandler(MessageType type, std::function<void(std::unique_ptr<PackageIn<MessageType>>)> handler) {
         ZoneScoped;
         m_handlers[static_cast<size_t>(type)] = handler;
     }
@@ -154,5 +157,27 @@ namespace P2P {
     void Client::CreateTCPConnection() {
         ZoneScoped;
         m_connection = TCPConnection<MessageType>::Create(m_context, m_packagesIn);
+    }
+
+    void Client::HandleIncomingPackages() {
+        constexpr int executeThreadCount = 1;
+        for (int i = 0; i < executeThreadCount; ++i) {
+            m_threadPool.emplace_back([this]() {
+                moodycamel::ConsumerToken token(m_packagesIn);
+                while (!m_destroyThreads) {
+                     while (m_connection != nullptr && m_connection->GetConnectionState() == ConnectionState::CONNECTED) {
+                        if (std::unique_ptr<PackageIn<MessageType>> package; m_packagesIn.try_dequeue(token, package)) {\
+                            m_handlers[package->Package->GetHeader().type](std::move(package));
+                        }
+
+                        if (m_packagesIn.size_approx() == 0) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                        }
+                     }
+
+                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+            });
+        }
     }
 }

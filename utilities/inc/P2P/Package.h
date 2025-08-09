@@ -12,6 +12,8 @@
 #include <boost/endian/conversion.hpp>
 #include <tracy/Tracy.hpp>
 
+#include <fmt/ostream.h>
+
 enum class PackageFlag : uint8_t {
     NONE               = 0,
     FILE_REQUEST       = 1 << 1,
@@ -42,7 +44,27 @@ struct PackageHeader {
     PackageTypeInt type{};
     PackageSizeInt size{};
     uint8_t        flags{};
+
+    void FromNativeToBigEndian() {
+        boost::endian::native_to_big_inplace(type);
+        boost::endian::native_to_big_inplace(size);
+        boost::endian::native_to_big_inplace(flags);
+    }
+
+    void FromBigEndianToNative() {
+        boost::endian::big_to_native_inplace(type);
+        boost::endian::big_to_native_inplace(size);
+        boost::endian::big_to_native_inplace(flags);
+    }
 };
+
+inline std::ostream& operator<<(std::ostream& os, const PackageHeader& object) {
+    os << "Type: " << static_cast<size_t>(object.type) << ", Size: " << static_cast<size_t>(object.size) << ", Flags: " << static_cast<size_t>(object.flags);
+    return os;
+}
+
+template <>
+struct fmt::formatter<PackageHeader> : fmt::ostream_formatter {};
 
 template <PackageType T>
 class Package final {
@@ -84,6 +106,10 @@ public:
     }
 
     NO_DISCARD PackageHeader& GetHeader() {
+        return m_header;
+    }
+
+    NO_DISCARD PackageHeader GetHeaderCopy() const {
         return m_header;
     }
 
@@ -218,6 +244,7 @@ public:
         ZoneScoped;
         PackageHeader header {
             static_cast<PackageTypeInt>(type),
+            0,
             0
         };
 
@@ -234,6 +261,7 @@ public:
         ZoneScoped;
         PackageHeader header {
             static_cast<PackageTypeInt>(type),
+            0,
             0
         };
 

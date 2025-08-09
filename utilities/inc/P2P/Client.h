@@ -52,12 +52,13 @@ namespace P2P {
         NO_DISCARD IPAddress GetConnectionAddress() const;
         NO_DISCARD std::array<uint16_t, 2> GetConnectionPorts() const;
 
-        void AddHandler(MessageType type, const std::function<void(std::unique_ptr<Package<MessageType>>)>& handler);
+        void AddHandler(MessageType type, std::function<void(std::unique_ptr<PackageIn<MessageType>>)> handler);
 
 
     private:
         void CreateTLSConnection(bool isServer);
         void CreateTCPConnection();
+        void HandleIncomingPackages();
 
         IOContext                   m_context;
         std::shared_ptr<SSLContext> m_sslContext{nullptr};
@@ -66,11 +67,12 @@ namespace P2P {
         moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<MessageType>>> m_packagesIn;
 
         ClientMode  m_clientMode;
+        bool m_destroyThreads{false};
 
         asio::executor_work_guard<asio::io_context::executor_type> m_contextWorkGuard;
         std::vector<std::thread> m_threadPool;
 
-        std::function<void(std::unique_ptr<Package<MessageType>>)> m_handlers[static_cast<uint64_t>(MessageType::COUNT)] = {nullptr};
+        std::function<void(std::unique_ptr<PackageIn<MessageType>>)> m_handlers[static_cast<uint64_t>(MessageType::COUNT)] = {nullptr};
 
     };
 }
