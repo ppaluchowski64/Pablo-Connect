@@ -39,8 +39,6 @@ TEST(TCP_Test, DataTransferTest_SimplePackage) {
             while (serverMessageReceived.load() < 2 || clientMessageReceived.load() < 1) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         });
 
         std::thread serverThread([&]() {
@@ -75,8 +73,6 @@ TEST(TCP_Test, DataTransferTest_SimplePackage) {
             while (serverMessageReceived.load() < 2 || clientMessageReceived.load() < 1) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         });
 
         serverThread.join();
