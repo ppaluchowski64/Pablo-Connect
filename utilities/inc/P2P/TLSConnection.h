@@ -105,6 +105,12 @@ public:
         return m_ports;
     }
 
+    void DestroyContext() override {
+        ZoneScoped;
+        std::shared_ptr<TLSConnection<T>> connection = this->shared_from_this();
+        asio::co_spawn(m_context, CoDestroyContext(connection), asio::detached);
+    }
+
 private:
     static asio::awaitable<void> CoStart(std::shared_ptr<TLSConnection<T>> connection, const std::function<void()> callback) {
         try {
@@ -178,6 +184,67 @@ private:
             Debug::LogError(error.what());
             connection->Disconnect();
         }
+    }
+
+    static asio::awaitable<void> CoDestroyContext(std::shared_ptr<TLSConnection<T>> connection) {
+        asio::error_code errorCode;
+
+        if (connection->GetConnectionState() != ConnectionState::CONNECTED) {
+            connection->m_context.stop();
+            co_return;
+        }
+
+        if (!connection->m_socket.lowest_layer().is_open() && !connection->m_fileStreamSocket.lowest_layer().is_open()) {
+            connection->SetConnectionState(ConnectionState::DISCONNECTED);
+            connection->m_context.stop();
+            co_return;
+        }
+
+        connection->SetConnectionState(ConnectionState::DISCONNECTING);
+
+        try {
+            if (connection->m_socket.lowest_layer().is_open()) {
+                co_await connection->m_socket.async_shutdown(asio::use_awaitable);
+            }
+
+            if (connection->m_fileStreamSocket.lowest_layer().is_open()) {
+                co_await connection->m_fileStreamSocket.async_shutdown(asio::use_awaitable);
+            }
+        } catch (const std::system_error& error) {
+            if (error.code() == asio::error::eof ||
+                error.code() == asio::error::connection_reset ||
+                error.code() == asio::error::operation_aborted ||
+                error.code() == asio::error::connection_aborted ||
+                error.code() == asio::error::broken_pipe ||
+                error.code() == asio::ssl::error::stream_truncated) {
+                Debug::Log("Graceful shutdown failed as connection was already closing: {}", error.what());
+            } else {
+                Debug::LogError("Unexpected error during socket shutdown: {}", error.what());
+            }
+        }
+
+        if (connection->m_socket.lowest_layer().is_open()) {
+            connection->m_socket.lowest_layer().close(errorCode);
+
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+            }
+        }
+
+        if (connection->m_fileStreamSocket.lowest_layer().is_open()) {
+            connection->m_fileStreamSocket.lowest_layer().close(errorCode);
+
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+            }
+        }
+
+        connection->SetConnectionState(ConnectionState::DISCONNECTED);
+        connection->m_receiveFileAwaitableFlag.Signal();
+        connection->m_sendMessageAwaitableFlag.Signal();
+        connection->m_sendFileAwaitableFlag.Signal();
+
+        connection->m_context.stop();
     }
 
     static asio::awaitable<void> CoDisconnect(std::shared_ptr<TLSConnection<T>> connection) {

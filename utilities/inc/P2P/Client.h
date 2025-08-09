@@ -59,6 +59,7 @@ namespace P2P {
         void CreateTLSConnection(bool isServer);
         void CreateTCPConnection();
         void HandleIncomingPackages();
+        void DestroyContext();
 
         IOContext                   m_context;
         std::shared_ptr<SSLContext> m_sslContext{nullptr};

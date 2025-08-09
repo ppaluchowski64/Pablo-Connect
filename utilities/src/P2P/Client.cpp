@@ -24,10 +24,9 @@ namespace P2P {
         ZoneScoped;
 
         m_contextWorkGuard.reset();
-        m_context.stop();
         m_destroyThreads = true;
 
-        Disconnect();
+        DestroyContext();
 
         for (auto& thread : m_threadPool) {
             if (thread.joinable()) {
@@ -179,5 +178,14 @@ namespace P2P {
                 }
             });
         }
+    }
+
+    void Client::DestroyContext() {
+        ZoneScoped;
+        if (m_connection == nullptr || m_connection->GetConnectionState() != ConnectionState::CONNECTED) {
+            return;
+        }
+
+        m_connection->DestroyContext();
     }
 }

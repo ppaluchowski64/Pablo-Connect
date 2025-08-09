@@ -19,6 +19,7 @@ public:
     virtual void Send(std::unique_ptr<Package<T>>&& package) = 0;
     virtual void RequestFile(const std::string& requestedFilePath, const std::string& fileName) = 0;
     virtual void Disconnect() = 0;
+    virtual void DestroyContext() = 0;
 
     NO_DISCARD virtual std::array<uint16_t, 2> GetPorts() const = 0;
     NO_DISCARD virtual IPAddress GetAddress() const = 0;

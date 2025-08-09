@@ -101,6 +101,42 @@ public:
         m_sendFileAwaitableFlag.Signal();
     }
 
+    void DestroyContext() override {
+        ZoneScoped;
+        if (!m_socket.is_open() && !m_fileStreamSocket.is_open()) {
+            SetConnectionState(ConnectionState::DISCONNECTED);
+            m_context.stop();
+            return;
+        }
+
+        SetConnectionState(ConnectionState::DISCONNECTED);
+        asio::error_code errorCode;
+
+        if (m_socket.is_open()) {
+            m_socket.close(errorCode);
+
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+            }
+        }
+
+        if (m_fileStreamSocket.is_open()) {
+            m_fileStreamSocket.close(errorCode);
+
+            if (errorCode) {
+                Debug::LogError(errorCode.message());
+            }
+        }
+
+        SetConnectionState(ConnectionState::DISCONNECTED);
+
+        m_receiveFileAwaitableFlag.Signal();
+        m_sendMessageAwaitableFlag.Signal();
+        m_sendFileAwaitableFlag.Signal();
+
+        m_context.stop();
+    }
+
     NO_DISCARD IPAddress GetAddress() const override {
         return m_address;
     }
