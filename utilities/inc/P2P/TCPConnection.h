@@ -72,27 +72,12 @@ public:
         ZoneScoped;
         if (!m_socket.is_open() && !m_fileStreamSocket.is_open()) {
             SetConnectionState(ConnectionState::DISCONNECTED);
+            m_context.stop();
             return;
         }
 
-        SetConnectionState(ConnectionState::DISCONNECTED);
-        asio::error_code errorCode;
-
-        if (m_socket.is_open()) {
-            m_socket.close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
-
-        if (m_fileStreamSocket.is_open()) {
-            m_fileStreamSocket.close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
+        CloseSocket(m_socket);
+        CloseSocket(m_fileStreamSocket);
 
         SetConnectionState(ConnectionState::DISCONNECTED);
 
@@ -109,24 +94,8 @@ public:
             return;
         }
 
-        SetConnectionState(ConnectionState::DISCONNECTED);
-        asio::error_code errorCode;
-
-        if (m_socket.is_open()) {
-            m_socket.close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
-
-        if (m_fileStreamSocket.is_open()) {
-            m_fileStreamSocket.close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
+        CloseSocket(m_socket);
+        CloseSocket(m_fileStreamSocket);
 
         SetConnectionState(ConnectionState::DISCONNECTED);
 
@@ -146,6 +115,29 @@ public:
     }
 
 private:
+    void CloseSocket(TCPSocket& socket) {
+        if (!socket.is_open()) {
+            return;
+        }
+
+        asio::error_code errorCode;
+
+        socket.cancel(errorCode);
+        if (!(!errorCode || errorCode == asio::error::bad_descriptor || errorCode == asio::error::bad_descriptor)) {
+            Debug::LogError(errorCode.message());
+        }
+
+        socket.shutdown(asio::socket_base::shutdown_both, errorCode);
+        if (!(!errorCode || errorCode == asio::error::bad_descriptor || errorCode == asio::error::bad_descriptor)) {
+            Debug::LogError(errorCode.message());
+        }
+
+        socket.cancel(errorCode);
+        if (!(!errorCode || errorCode == asio::error::bad_descriptor || errorCode == asio::error::bad_descriptor)) {
+            Debug::LogError(errorCode.message());
+        }
+    }
+
     static asio::awaitable<void> CoStart(std::shared_ptr<TCPConnection<T>> connection, const std::function<void()> callback) {
         while (true) {
             try {
@@ -269,7 +261,7 @@ private:
                 connection->m_inQueue.enqueue(inQueueToken, std::move(packageIn));
             }
         } catch (const std::system_error& error) {
-            if (error.code() == asio::error::eof || error.code() == asio::error::connection_reset) {
+            if (error.code() == asio::error::eof || error.code() == asio::error::connection_reset || error.code() == asio::error::operation_aborted) {
                 Debug::Log("Connection closed cleanly by peer.");
             } else if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
                 Debug::LogError(error.what());
@@ -320,7 +312,9 @@ private:
                 }
             }
         } catch (const std::system_error& error) {
-            if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
+            if (error.code() == asio::error::eof || error.code() == asio::error::connection_reset || error.code() == asio::error::operation_aborted) {
+                Debug::Log("Connection closed cleanly by peer.");
+            } else if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
                 Debug::LogError(error.what());
             }
 
@@ -353,7 +347,7 @@ private:
                 }
             }
         } catch (const std::system_error& error) {
-            if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
+            if (connection->GetConnectionState() == ConnectionState::CONNECTED && error.code() != asio::error::operation_aborted) {
                 Debug::LogError(error.what());
             }
 
@@ -419,7 +413,7 @@ private:
                 }
             }
         } catch (const std::system_error& error) {
-            if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
+            if (connection->GetConnectionState() == ConnectionState::CONNECTED && error.code() != asio::error::operation_aborted) {
                 Debug::LogError(error.what());
             }
 
