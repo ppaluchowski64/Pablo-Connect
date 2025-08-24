@@ -86,7 +86,11 @@ public:
 
     void RequestFile(const std::string& requestedFilePath, const std::string& fileName) override {
         ZoneScoped;
-        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(static_cast<T>(0), std::string(requestedFilePath), std::string(requestedFilePath));
+
+        size_t requestID = m_fileCurrentID.fetch_add(1);
+        m_fileNameMap.InsertOrAssign(requestID, std::string(fileName));
+
+        std::unique_ptr<Package<T>> package = Package<T>::CreateUnique(static_cast<T>(0), std::move(requestID), std::string(requestedFilePath));
         package->GetHeader().flags = static_cast<uint8_t>(PackageFlag::FILE_REQUEST);
         Send(std::move(package));
     }
@@ -97,18 +101,18 @@ public:
         asio::co_spawn(m_context, CoDisconnect(connection), asio::detached);
     }
 
+    void DestroyContext() override {
+        ZoneScoped;
+        std::shared_ptr<TLSConnection<T>> connection = this->shared_from_this();
+        asio::co_spawn(m_context, CoDestroyContext(connection), asio::detached);
+    }
+
     NO_DISCARD IPAddress GetAddress() const override {
         return m_address;
     }
 
     NO_DISCARD std::array<uint16_t, 2> GetPorts() const override {
         return m_ports;
-    }
-
-    void DestroyContext() override {
-        ZoneScoped;
-        std::shared_ptr<TLSConnection<T>> connection = this->shared_from_this();
-        asio::co_spawn(m_context, CoDestroyContext(connection), asio::detached);
     }
 
 private:
@@ -186,9 +190,39 @@ private:
         }
     }
 
-    static asio::awaitable<void> CoDestroyContext(std::shared_ptr<TLSConnection<T>> connection) {
+    static asio::awaitable<void> CoCloseSocket(SSLSocket& socket) {
+        if (!socket.lowest_layer().is_open()) {
+            co_return;
+        }
+
         asio::error_code errorCode;
 
+        socket.lowest_layer().cancel(errorCode);
+        if (!(!errorCode || errorCode == asio::error::bad_descriptor || errorCode == asio::error::operation_aborted || errorCode == asio::error::connection_reset || errorCode == asio::ssl::error::stream_truncated || errorCode == asio::error::connection_aborted)) {
+            Debug::LogError(errorCode.message());
+        }
+
+        if (!socket.lowest_layer().is_open()) {
+            co_return;
+        }
+
+
+        co_await socket.async_shutdown(asio::redirect_error(asio::use_awaitable, errorCode));
+        if (!(!errorCode || errorCode == asio::error::bad_descriptor || errorCode == asio::error::operation_aborted || errorCode == asio::error::connection_reset || errorCode == asio::ssl::error::stream_truncated || errorCode == asio::error::connection_aborted)) {
+            Debug::LogError(errorCode.message());
+        }
+
+        if (!socket.lowest_layer().is_open()) {
+            co_return;
+        }
+
+        socket.lowest_layer().close(errorCode);
+        if (socket.lowest_layer().is_open() && !(!errorCode || errorCode == asio::error::bad_descriptor || errorCode == asio::error::operation_aborted || errorCode == asio::error::connection_reset || errorCode == asio::ssl::error::stream_truncated || errorCode == asio::error::connection_aborted)) {
+            Debug::LogError(errorCode.message());
+        }
+    }
+
+    static asio::awaitable<void> CoDestroyContext(std::shared_ptr<TLSConnection<T>> connection) {
         if (connection->GetConnectionState() != ConnectionState::CONNECTED) {
             connection->m_context.stop();
             co_return;
@@ -202,42 +236,8 @@ private:
 
         connection->SetConnectionState(ConnectionState::DISCONNECTING);
 
-        try {
-            if (connection->m_socket.lowest_layer().is_open()) {
-                co_await connection->m_socket.async_shutdown(asio::use_awaitable);
-            }
-
-            if (connection->m_fileStreamSocket.lowest_layer().is_open()) {
-                co_await connection->m_fileStreamSocket.async_shutdown(asio::use_awaitable);
-            }
-        } catch (const std::system_error& error) {
-            if (error.code() == asio::error::eof ||
-                error.code() == asio::error::connection_reset ||
-                error.code() == asio::error::operation_aborted ||
-                error.code() == asio::error::connection_aborted ||
-                error.code() == asio::error::broken_pipe ||
-                error.code() == asio::ssl::error::stream_truncated) {
-                Debug::Log("Graceful shutdown failed as connection was already closing: {}", error.what());
-            } else {
-                Debug::LogError("Unexpected error during socket shutdown: {}", error.what());
-            }
-        }
-
-        if (connection->m_socket.lowest_layer().is_open()) {
-            connection->m_socket.lowest_layer().close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
-
-        if (connection->m_fileStreamSocket.lowest_layer().is_open()) {
-            connection->m_fileStreamSocket.lowest_layer().close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
+        co_await connection->CoCloseSocket(connection->m_socket);
+        co_await connection->CoCloseSocket(connection->m_fileStreamSocket);
 
         connection->SetConnectionState(ConnectionState::DISCONNECTED);
         connection->m_receiveFileAwaitableFlag.Signal();
@@ -248,8 +248,6 @@ private:
     }
 
     static asio::awaitable<void> CoDisconnect(std::shared_ptr<TLSConnection<T>> connection) {
-        asio::error_code errorCode;
-
         if (connection->GetConnectionState() != ConnectionState::CONNECTED) {
             co_return;
         }
@@ -261,49 +259,13 @@ private:
 
         connection->SetConnectionState(ConnectionState::DISCONNECTING);
 
-        try {
-            if (connection->m_socket.lowest_layer().is_open()) {
-                co_await connection->m_socket.async_shutdown(asio::use_awaitable);
-            }
-
-            if (connection->m_fileStreamSocket.lowest_layer().is_open()) {
-                co_await connection->m_fileStreamSocket.async_shutdown(asio::use_awaitable);
-            }
-        } catch (const std::system_error& error) {
-            if (error.code() == asio::error::eof ||
-                error.code() == asio::error::connection_reset ||
-                error.code() == asio::error::operation_aborted ||
-                error.code() == asio::error::connection_aborted ||
-                error.code() == asio::error::broken_pipe ||
-                error.code() == asio::ssl::error::stream_truncated) {
-                Debug::Log("Graceful shutdown failed as connection was already closing: {}", error.what());
-            } else {
-                Debug::LogError("Unexpected error during socket shutdown: {}", error.what());
-            }
-        }
-
-        if (connection->m_socket.lowest_layer().is_open()) {
-            connection->m_socket.lowest_layer().close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
-
-        if (connection->m_fileStreamSocket.lowest_layer().is_open()) {
-            connection->m_fileStreamSocket.lowest_layer().close(errorCode);
-
-            if (errorCode) {
-                Debug::LogError(errorCode.message());
-            }
-        }
+        co_await connection->CoCloseSocket(connection->m_socket);
+        co_await connection->CoCloseSocket(connection->m_fileStreamSocket);
 
         connection->SetConnectionState(ConnectionState::DISCONNECTED);
         connection->m_receiveFileAwaitableFlag.Signal();
         connection->m_sendMessageAwaitableFlag.Signal();
         connection->m_sendFileAwaitableFlag.Signal();
-
-        co_return;
     }
 
     static asio::awaitable<void> CoReceiveMessage(std::shared_ptr<TLSConnection<T>> connection) {
@@ -333,6 +295,7 @@ private:
                 if ((header.flags & PackageFlag::FILE_REQUEST) != 0) {
                     connection->m_fileRequestQueue.enqueue(fileRequestToken, std::move(package));
                     connection->m_sendFileAwaitableFlag.Signal();
+                    continue;
                 }
 
                 std::unique_ptr<PackageIn<T>> packageIn = std::make_unique<PackageIn<T>>();
@@ -341,11 +304,11 @@ private:
 
                 connection->m_inQueue.enqueue(inQueueToken, std::move(packageIn));
             }
-        } catch (const std::system_error& error) {
-            if (error.code() == asio::error::eof || error.code() == asio::ssl::error::stream_truncated) {
+        } catch (const asio::error_code& errorCode) {
+            if (errorCode == asio::error::eof || errorCode == asio::error::connection_reset || errorCode == asio::error::operation_aborted || errorCode == asio::error::connection_aborted || errorCode == asio::error::broken_pipe)  {
                 Debug::Log("Connection closed cleanly by peer.");
             } else if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
-                Debug::LogError(error.what());
+                Debug::LogError(errorCode.message());
             }
 
             connection->Disconnect();
@@ -357,18 +320,26 @@ private:
         try {
             moodycamel::ConsumerToken fileInfoToken(connection->m_fileInfoQueue);
 
-            if (connection->GetConnectionState() == ConnectionState::CONNECTED) co_return;
+            if (connection->GetConnectionState() != ConnectionState::CONNECTED) co_return;
+
             std::vector<char> dataBuffer(FILE_BUFFER_SIZE);
             co_await connection->m_receiveFileAwaitableFlag.Wait();
 
             while (connection->GetConnectionState() == ConnectionState::CONNECTED) {
                 if (std::unique_ptr<Package<T>> package; connection->m_fileInfoQueue.try_dequeue(fileInfoToken, package)) {
-                    std::string filename;
+                    size_t requestID;
                     PackageSizeInt size;
 
-                    package->GetValue(filename);
+                    package->GetValue(requestID);
                     package->GetValue(size);
 
+                    if (!connection->m_fileNameMap.Contains(requestID)) {
+                        Debug::LogError("File ID do not exist");
+                        connection->Disconnect();
+                        co_return;
+                    }
+
+                    std::string filename = connection->m_fileNameMap.Get(requestID).value();
                     std::ofstream fileStream(P2PSettings::GetFileDownloadDirectory() / filename, std::ios::binary | std::ios::trunc);
 
                     if (!fileStream.is_open()) {
@@ -392,9 +363,11 @@ private:
                     co_await connection->m_receiveFileAwaitableFlag.Wait();
                 }
             }
-        } catch (const std::system_error& error) {
-            if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
-                Debug::LogError(error.what());
+        } catch (const asio::error_code& errorCode) {
+            if (errorCode == asio::error::eof || errorCode == asio::error::connection_reset || errorCode == asio::error::operation_aborted || errorCode == asio::error::connection_aborted || errorCode == asio::error::broken_pipe)  {
+                Debug::Log("Connection closed cleanly by peer.");
+            } else if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
+                Debug::LogError(errorCode.message());
             }
 
             connection->Disconnect();
@@ -446,10 +419,10 @@ private:
 
             while (connection->GetConnectionState() == ConnectionState::CONNECTED) {
                 if (std::unique_ptr<Package<T>> package; connection->m_fileRequestQueue.try_dequeue(fileRequestToken, package)) {
-                    std::string filename;
+                    size_t      requestID;
                     std::string path;
 
-                    package->GetValue(filename);
+                    package->GetValue(requestID);
                     package->GetValue(path);
 
                     std::filesystem::path filePath(path);
@@ -460,25 +433,24 @@ private:
                         co_return;
                     }
 
-                    PackageSizeInt size = std::filesystem::file_size(filePath);
-
-                    {
-                        std::unique_ptr<Package<T>> fileInfo = Package<T>::CreateUnique(static_cast<T>(0), std::move(filename), std::move(size));
-                        fileInfo->GetHeader().flags = static_cast<uint8_t>(PackageFlag::FILE_RECEIVE_INFO);
-                        connection->Send(std::move(fileInfo));
-                    }
-
                     std::ifstream fileStream(filePath, std::ios::binary | std::ios::in);
-
                     if (!fileStream.is_open()) {
                         Debug::LogError("Could not open file");
                         connection->Disconnect();
                         co_return;
                     }
 
+                    PackageSizeInt size = std::filesystem::file_size(filePath);
+                    {
+                        std::unique_ptr<Package<T>> fileInfo = Package<T>::CreateUnique(static_cast<T>(0), size_t{requestID}, PackageSizeInt{size});
+                        fileInfo->GetHeader().flags = static_cast<uint8_t>(PackageFlag::FILE_RECEIVE_INFO);
+                        connection->Send(std::move(fileInfo));
+                    }
+
                     while (size > 0) {
                         const PackageSizeInt readSize = std::min(size, FILE_BUFFER_SIZE);
                         size -= readSize;
+
                         fileStream.read(fileBuffer.data(), readSize);
 
                         asio::const_buffer buffer(fileBuffer.data(), readSize);
@@ -492,7 +464,7 @@ private:
                 }
             }
         } catch (const std::system_error& error) {
-            if (connection->GetConnectionState() == ConnectionState::CONNECTED) {
+            if (connection->GetConnectionState() == ConnectionState::CONNECTED && error.code() != asio::error::operation_aborted && error.code() != asio::error::connection_aborted) {
                 Debug::LogError(error.what());
             }
 
@@ -522,6 +494,9 @@ private:
     moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_fileRequestQueue;
     moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_fileInfoQueue;
     moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& m_inQueue;
+
+    ConcurrentUnorderedMap<size_t, std::string> m_fileNameMap;
+    std::atomic<size_t>                         m_fileCurrentID{0};
 
     IPAddress             m_address;
     std::array<uint16_t, 2> m_ports;

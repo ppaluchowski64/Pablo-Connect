@@ -5,38 +5,45 @@
 #include <future>
 #include <chrono>
 
+#include <fstream>
+
 static std::vector<std::future<void>> leaked_futures;
 
-TEST(TLS_Test, DataTransferTest_SimplePackage) {
+TEST(TLS_Test, FileStreamTest_SmallFile) {
+    std::fstream fileStream;
+    const std::string data(1024, 'a');
+
+    if (std::filesystem::exists("test.txt")) {
+        std::filesystem::remove("test.txt");
+    }
+
+    if (std::filesystem::exists("test_result.txt")) {
+        std::filesystem::remove("test_result.txt");
+    }
+
+    fileStream.open("test.txt", std::ios::out | std::ios::binary);
+    fileStream.write(data.c_str(), data.size());
+    fileStream.close();
+
     auto future = std::async(std::launch::async, [] {
         std::array<uint16_t, 2> ports{};
         asio::ip::address address{};
 
         std::atomic<bool> ready{false};
-        std::atomic<int> clientMessageReceived{0};
-        std::atomic<int> serverMessageReceived{0};
 
         std::thread clientThread([&]() {
             P2P::Client client;
             client.SetClientMode(P2P::ClientMode::TLS_Client);
-
-            client.AddHandler(P2P::MessageType::message, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
-                std::string value;
-                package->Package->GetValue(value);
-                ASSERT_EQ(std::string("echo test"), value);
-                ++clientMessageReceived;
-            });
 
             while (!ready.load()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
             client.Connect(address, ports, [&]() {
-                client.Send(P2P::MessageType::message, std::string("message test"));
-                client.Send(P2P::MessageType::echo, std::string("echo test"));
+                client.RequestFile("./test.txt", "test_result.txt");
             });
 
-            while (serverMessageReceived.load() < 2 || clientMessageReceived.load() < 1) {
+            while (!std::filesystem::exists("test_result.txt") || std::filesystem::file_size("test_result.txt") != 1024) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
@@ -46,20 +53,6 @@ TEST(TLS_Test, DataTransferTest_SimplePackage) {
         std::thread serverThread([&]() {
             P2P::Client server;
             server.SetClientMode(P2P::ClientMode::TLS_Client);
-
-            server.AddHandler(P2P::MessageType::message, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
-                std::string value;
-                package->Package->GetValue(value);
-                ++serverMessageReceived;
-            });
-
-            server.AddHandler(P2P::MessageType::echo, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
-                std::string value;
-                package->Package->GetValue(value);
-                std::unique_ptr<Package<P2P::MessageType>> packageCopy = Package<P2P::MessageType>::CreateUnique(P2P::MessageType::message, std::move(value));
-                server.Send(std::move(packageCopy));
-                ++serverMessageReceived;
-            });
 
             server.SeekLocalConnection([&]() {
                 ports = server.GetConnectionPorts();
@@ -72,7 +65,7 @@ TEST(TLS_Test, DataTransferTest_SimplePackage) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
-            while (serverMessageReceived.load() < 2 || clientMessageReceived.load() < 1) {
+            while (!std::filesystem::exists("test_result.txt") || std::filesystem::file_size("test_result.txt") != 1024) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
@@ -81,6 +74,7 @@ TEST(TLS_Test, DataTransferTest_SimplePackage) {
 
         serverThread.join();
         clientThread.join();
+
     });
 
     if (future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {

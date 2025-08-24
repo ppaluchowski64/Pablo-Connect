@@ -4,6 +4,10 @@
 #include <AddressResolver.h>
 #include <array>
 
+/*
+* TO FIX
+* Number higher than 1 may lead to occasional asio errors (TLS mostly, more rarely TCP)
+*/
 static constexpr int ASIO_THREAD_COUNT = 1;
 
 namespace P2P {
