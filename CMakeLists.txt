@@ -53,7 +53,7 @@ target_compile_definitions(util_lib_p_connect PUBLIC
 target_include_directories(util_lib_p_connect PUBLIC utilities/inc/ ${concurrentqueue_SOURCE_DIR})
 
 if (ENABLE_TESTS)
-    BuildTests(All_Tests ../tests util_lib_p_connect)
+    BuildTestProgram(MultiCast_Test asio-abstractions-programs/MultiCast.cpp util_lib_p_connect)
     BuildTests(Asio_Abstractions_Test asio-abstractions util_lib_p_connect)
     BuildTests(Concurrent_Structures_Test concurrent-structures util_lib_p_connect)
 endif()

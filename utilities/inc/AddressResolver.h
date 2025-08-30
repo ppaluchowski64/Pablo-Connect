@@ -1,7 +1,7 @@
 #ifndef ADDRESS_RESOLVER_H
 #define ADDRESS_RESOLVER_H
 
-#include <P2P/Common.h>
+#include <AsioCommon.h>
 #include <DebugLog.h>
 
 class AddressResolver final {

@@ -1,7 +1,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include <P2P/Common.h>
+#include <AsioCommon.h>
 #include <P2P/Package.h>
 #include <P2P/ConnectionParent.h>
 #include <P2P/TCPConnection.h>

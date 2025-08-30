@@ -1,12 +1,11 @@
-#ifndef TCP_TLS_COMMON_H
-#define TCP_TLS_COMMON_H
+#ifndef ASIO_COMMON_H
+#define ASIO_COMMON_H
 
 #include <type_traits>
 #include <string>
 #include <vector>
 #include <asio.hpp>
 #include <asio/ssl.hpp>
-#include <DebugLog.h>
 
 typedef uint32_t PackageSizeInt;
 typedef uint16_t PackageTypeInt;
@@ -21,6 +20,9 @@ typedef asio::ip::tcp::acceptor TCPAcceptor;
 typedef asio::ssl::context::method SSLMethod;
 typedef asio::ssl::stream_base SSLStreamBase;
 typedef asio::ip::address IPAddress;
+typedef asio::ip::udp::endpoint UDPEndpoint;
+typedef asio::ip::udp::resolver UDPResolver;
+typedef asio::ip::udp::socket UDPSocket;
 
 constexpr PackageSizeInt MAX_NON_FILE_PACKAGE_SIZE = 1024 * 32;
 constexpr PackageSizeInt MAX_FULL_PACKAGE_SIZE = 1024 * 64;
@@ -29,7 +31,6 @@ constexpr PackageSizeInt FILE_BUFFER_SIZE = 128 * 1024;
 constexpr uint32_t PACKAGES_WARN_THRESHOLD = 10000;
 constexpr uint16_t SSL_CONNECTION_PORT = 50000;
 constexpr uint16_t SSL_FILE_STREAM_PORT = 50001;
-
 
 template <typename T>
 concept PackageType = std::is_same_v<std::underlying_type_t<T>, PackageTypeInt>;
@@ -57,4 +58,4 @@ enum class ConnectionState : uint8_t {
     DISCONNECTING
 };
 
-#endif //TCP_TLS_COMMON_H
+#endif //ASIO_COMMON_H

@@ -5,7 +5,7 @@
 #include <P2P/ConnectionParent.h>
 #include <P2P/Settings.h>
 #include <concurrentqueue.h>
-
+#include <deque>
 #include <utility>
 
 template <PackageType T>
@@ -272,8 +272,6 @@ private:
         try {
             PackageHeader header{};
             moodycamel::ProducerToken inQueueToken(connection->m_inQueue);
-            moodycamel::ProducerToken fileRequestToken(connection->m_fileRequestQueue);
-            moodycamel::ProducerToken fileInfoToken(connection->m_fileInfoQueue);
 
             while (connection->GetConnectionState() == ConnectionState::CONNECTED) {
                 asio::mutable_buffer headerBuffer(&header, sizeof(PackageHeader));
@@ -287,13 +285,13 @@ private:
                 co_await asio::async_read(connection->m_socket, packageBuffer, asio::use_awaitable);
 
                 if ((header.flags & PackageFlag::FILE_RECEIVE_INFO) != 0) {
-                    connection->m_fileInfoQueue.enqueue(fileInfoToken, std::move(package));
+                    connection->m_fileInfoQueue.push_back(std::move(package));
                     connection->m_receiveFileAwaitableFlag.Signal();
                     continue;
                 }
 
                 if ((header.flags & PackageFlag::FILE_REQUEST) != 0) {
-                    connection->m_fileRequestQueue.enqueue(fileRequestToken, std::move(package));
+                    connection->m_fileRequestQueue.push_back(std::move(package));
                     connection->m_sendFileAwaitableFlag.Signal();
                     continue;
                 }
@@ -318,15 +316,16 @@ private:
 
     static asio::awaitable<void> CoReceiveFile(std::shared_ptr<TLSConnection<T>> connection) {
         try {
-            moodycamel::ConsumerToken fileInfoToken(connection->m_fileInfoQueue);
-
             if (connection->GetConnectionState() != ConnectionState::CONNECTED) co_return;
 
             std::vector<char> dataBuffer(FILE_BUFFER_SIZE);
             co_await connection->m_receiveFileAwaitableFlag.Wait();
 
             while (connection->GetConnectionState() == ConnectionState::CONNECTED) {
-                if (std::unique_ptr<Package<T>> package; connection->m_fileInfoQueue.try_dequeue(fileInfoToken, package)) {
+                if (!connection->m_fileInfoQueue.empty()) {
+                    std::unique_ptr<Package<T>> package = std::move(connection->m_fileInfoQueue.front());
+                    connection->m_fileInfoQueue.pop_front();
+
                     size_t requestID;
                     PackageSizeInt size;
 
@@ -410,15 +409,16 @@ private:
 
     static asio::awaitable<void> CoSendFile(std::shared_ptr<TLSConnection<T>> connection) {
         try {
-            moodycamel::ConsumerToken fileRequestToken(connection->m_fileRequestQueue);
-
             if (connection->GetConnectionState() != ConnectionState::CONNECTED) co_return;
             std::vector<char> fileBuffer(FILE_BUFFER_SIZE);
 
             co_await connection->m_sendFileAwaitableFlag.Wait();
 
             while (connection->GetConnectionState() == ConnectionState::CONNECTED) {
-                if (std::unique_ptr<Package<T>> package; connection->m_fileRequestQueue.try_dequeue(fileRequestToken, package)) {
+                if (!connection->m_fileRequestQueue.empty()) {
+                    std::unique_ptr<Package<T>> package = std::move(connection->m_fileRequestQueue.front());
+                    connection->m_fileRequestQueue.pop_front();
+
                     size_t      requestID;
                     std::string path;
 
@@ -491,14 +491,16 @@ private:
     std::atomic<ConnectionState> m_connectionState;
 
     moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_outQueue;
-    moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_fileRequestQueue;
-    moodycamel::ConcurrentQueue<std::unique_ptr<Package<T>>>    m_fileInfoQueue;
     moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& m_inQueue;
+
+    std::deque<std::unique_ptr<Package<T>>> m_fileRequestQueue;
+    std::deque<std::unique_ptr<Package<T>>> m_fileInfoQueue;
+
 
     ConcurrentUnorderedMap<size_t, std::string> m_fileNameMap;
     std::atomic<size_t>                         m_fileCurrentID{0};
 
-    IPAddress             m_address;
+    IPAddress               m_address;
     std::array<uint16_t, 2> m_ports;
 };
 
