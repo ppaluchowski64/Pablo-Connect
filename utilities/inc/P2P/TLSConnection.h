@@ -18,7 +18,7 @@ public:
           m_inQueue(sharedMessageQueue), m_ports({0, 0})
     { }
 
-    static NO_DISCARD std::shared_ptr<SSLContext> CreateSSLContext(const std::filesystem::path& path, const bool isServer) {
+    NO_DISCARD static std::shared_ptr<SSLContext> CreateSSLContext(const std::filesystem::path& path, const bool isServer) {
         ZoneScoped;
         auto ctx = std::make_shared<SSLContext>(isServer ? SSLContext::tlsv13_server : SSLContext::tlsv13_client);
         const std::string keyPath = (path / "privateKey.key").string();
@@ -39,7 +39,7 @@ public:
         return ctx;
     }
 
-    static NO_DISCARD std::shared_ptr<TLSConnection<T>> Create(IOContext& sharedContext, std::shared_ptr<SSLContext> sharedSSLContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue) {
+    NO_DISCARD static std::shared_ptr<TLSConnection<T>> Create(IOContext& sharedContext, std::shared_ptr<SSLContext> sharedSSLContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue) {
         return std::make_shared<TLSConnection<T>>(sharedContext, sharedSSLContext, sharedMessageQueue);
     }
 

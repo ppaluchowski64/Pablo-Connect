@@ -19,12 +19,12 @@ public:
     static void SetFilePrefix(const std::string& prefix);
     static void SetFileSuffix(const std::string& suffix);
 
-    static NO_DISCARD std::filesystem::path GetFilePath();
-    static NO_DISCARD std::string GetFilePrefix();
-    static NO_DISCARD std::string GetFileSuffix();
+    NO_DISCARD static std::filesystem::path GetFilePath();
+    NO_DISCARD static std::string GetFilePrefix();
+    NO_DISCARD static std::string GetFileSuffix();
 
     static void GetUniqueName(std::string& value);
-    static NO_DISCARD std::string GetUniqueName();
+    NO_DISCARD static std::string GetUniqueName();
 
 private:
     static std::filesystem::path s_path;

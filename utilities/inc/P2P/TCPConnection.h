@@ -18,7 +18,7 @@ public:
         m_sendMessageAwaitableFlag(sharedContext.get_executor()), m_sendFileAwaitableFlag(sharedContext.get_executor()),
         m_receiveFileAwaitableFlag(sharedContext.get_executor()), m_connectionState(ConnectionState::DISCONNECTED), m_inQueue(sharedMessageQueue), m_ports({0, 0}) { }
 
-    static NO_DISCARD std::shared_ptr<TCPConnection<T>> Create(IOContext& sharedContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue) {
+    NO_DISCARD static std::shared_ptr<TCPConnection<T>> Create(IOContext& sharedContext, moodycamel::ConcurrentQueue<std::unique_ptr<PackageIn<T>>>& sharedMessageQueue) {
         return std::make_shared<TCPConnection<T>>(sharedContext, sharedMessageQueue);
     }
 
