@@ -1,4 +1,4 @@
-#include <P2P/Settings.h>
+#include <Settings.h>
 
 std::mutex P2PSettings::m_mutex{};
 std::filesystem::path P2PSettings::m_fileDownloadDirectory{};

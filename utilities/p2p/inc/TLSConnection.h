@@ -2,8 +2,8 @@
 #define P2P_TLS_CONNECTION_H
 
 #include <AwaitableFlag.h>
-#include <P2P/ConnectionParent.h>
-#include <P2P/Settings.h>
+#include <ConnectionParent.h>
+#include <Settings.h>
 #include <concurrentqueue.h>
 #include <deque>
 #include <utility>

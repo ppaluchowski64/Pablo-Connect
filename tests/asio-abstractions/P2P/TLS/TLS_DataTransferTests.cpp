@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <P2P/Client.h>
+#include <../../../../utilities/p2p/inc/Client.h>
 
 #include <thread>
 #include <future>

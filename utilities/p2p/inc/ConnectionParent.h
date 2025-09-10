@@ -2,7 +2,7 @@
 #define P2P_CONNECTION_PARENT_H
 
 #include <AsioCommon.h>
-#include <P2P/Package.h>
+#include <Package.h>
 #include <tracy/Tracy.hpp>
 
 #ifndef NO_DISCARD

@@ -4,6 +4,7 @@
 #include <asio.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/steady_timer.hpp>
+#include <tracy/Tracy.hpp>
 #include <atomic>
 
 class AwaitableFlag {

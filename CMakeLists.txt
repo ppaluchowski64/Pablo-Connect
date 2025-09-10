@@ -6,7 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(ENABLE_TESTS ON)
 
 include(FetchContent)
+
 include(cmake/Tests.cmake)
+include(cmake/Build.cmake)
 
 find_package(OpenSSL REQUIRED)
 find_package(asio    REQUIRED)
@@ -41,19 +43,20 @@ FetchContent_MakeAvailable(google-benchmark)
 FetchContent_MakeAvailable(debug-log)
 FetchContent_MakeAvailable(concurrent_queue-mc)
 
-file(GLOB_RECURSE UTIL_SRC utilities/*)
-
-add_library(util_lib_p_connect STATIC ${UTIL_SRC})
-target_link_libraries(util_lib_p_connect PUBLIC openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
-
-target_compile_definitions(util_lib_p_connect PUBLIC
+add_library(project_defaults INTERFACE)
+target_include_directories(project_defaults INTERFACE
+        ${concurrentqueue_SOURCE_DIR}
+)
+target_compile_definitions(project_defaults INTERFACE
         $<$<CONFIG:Debug>:TRACY_ENABLE>
 )
 
-target_include_directories(util_lib_p_connect PUBLIC utilities/inc/ ${concurrentqueue_SOURCE_DIR})
+BuildStaticLibrary(network-component-pc utilities/network project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
+BuildStaticLibrary(system-component-pc utilities/system project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
+BuildStaticLibrary(p2p-component-pc utilities/p2p project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient network-component-pc system-component-pc)
 
 if (ENABLE_TESTS)
-    BuildTestProgram(MultiCast_Test asio-abstractions-programs/MultiCast.cpp util_lib_p_connect)
-    BuildTests(Asio_Abstractions_Test asio-abstractions util_lib_p_connect)
-    BuildTests(Concurrent_Structures_Test concurrent-structures util_lib_p_connect)
+    BuildTestProgram(MultiCast_Test asio-abstractions-programs/MultiCast.cpp network-component-pc system-component-pc p2p-component-pc project_defaults)
+    BuildTests(Concurrent_Structures_Test concurrent-structures network-component-pc system-component-pc p2p-component-pc project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
+    BuildTests(Asio_Abstractions_Test asio-abstractions network-component-pc system-component-pc p2p-component-pc project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
 endif()

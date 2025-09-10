@@ -11,7 +11,6 @@
 #include <AsioCommon.h>
 #include <boost/endian/conversion.hpp>
 #include <tracy/Tracy.hpp>
-
 #include <fmt/ostream.h>
 
 enum class PackageFlag : uint8_t {

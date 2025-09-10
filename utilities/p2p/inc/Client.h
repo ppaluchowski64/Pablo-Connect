@@ -2,11 +2,11 @@
 #define CLIENT_H
 
 #include <AsioCommon.h>
-#include <P2P/Package.h>
-#include <P2P/ConnectionParent.h>
-#include <P2P/TCPConnection.h>
-#include <P2P/TLSConnection.h>
-#include <TLS/CertificateManager.h>
+#include <Package.h>
+#include <ConnectionParent.h>
+#include <TCPConnection.h>
+#include <TLSConnection.h>
+#include <CertificateManager.h>
 #include <UniqueFileNamesGenerator.h>
 #include <tracy/Tracy.hpp>
 

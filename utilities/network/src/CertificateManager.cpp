@@ -1,4 +1,4 @@
-#include <TLS/CertificateManager.h>
+#include <CertificateManager.h>
 #include <tracy/Tracy.hpp>
 
 #include <openssl/evp.h>
@@ -6,7 +6,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 #include <DebugLog.h>
-#include <stdio.h>
+#include <cstdio>
 #include <filesystem>
 
 namespace TLS {
