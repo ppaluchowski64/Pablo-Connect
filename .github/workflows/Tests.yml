@@ -37,7 +37,7 @@ jobs:
         run: conan profile detect --force
 
       - name: Install Conan dependencies and generate toolchain
-        run: conan install . --output-folder build --build=missing -s compiler.cppstd=20 -g CMakeToolchain
+        run: conan install . --output-folder build --build=missing -s compiler.cppstd=20
 
       - name: Configure CMake
         run: cmake -B build -S . -G Ninja -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
