@@ -2,12 +2,11 @@
 # To keep your changes, remove these comment lines, but the plugin won't be able to modify your requirements
 
 from conan import ConanFile
-from conan.tools.cmake import cmake_layout, CMakeToolchain
+from conan.tools.cmake import cmake_layout, CMakeToolchain, CMakeDeps
 
 class ConanApplication(ConanFile):
     package_type = "application"
     settings = "os", "compiler", "build_type", "arch"
-    generators = "CMakeDeps"
     default_options = {
         "boost/*:without_atomic": False,
         "boost/*:without_chrono": False,
@@ -51,6 +50,9 @@ class ConanApplication(ConanFile):
         tc = CMakeToolchain(self)
         tc.user_presets_path = False
         tc.generate()
+
+        deps = CMakeDeps(self)
+        deps.generate()
 
     def requirements(self):
         requirements = self.conan_data.get('requirements', [])
