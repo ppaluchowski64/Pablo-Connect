@@ -57,6 +57,6 @@ BuildStaticLibrary(p2p-component-pc utilities/p2p project_defaults openssl::open
 
 if (ENABLE_TESTS)
     BuildTestProgram(MultiCast_Test asio-abstractions-programs/MultiCast.cpp network-component-pc system-component-pc p2p-component-pc project_defaults)
-    BuildTests(Concurrent_Structures_Test concurrent-structures network-component-pc system-component-pc p2p-component-pc project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
-    BuildTests(Asio_Abstractions_Test asio-abstractions network-component-pc system-component-pc p2p-component-pc project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient)
+    BuildTests(Concurrent_Structures_Test concurrent-structures network-component-pc system-component-pc p2p-component-pc)
+    BuildTests(Asio_Abstractions_Test asio-abstractions network-component-pc system-component-pc p2p-component-pc)
 endif()

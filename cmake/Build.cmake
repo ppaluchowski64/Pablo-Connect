@@ -9,6 +9,6 @@ function(BuildStaticLibrary StaticLibraryName RootPath)
     )
 
     add_library(${StaticLibraryName} STATIC ${SOURCE_FILES} ${HEADER_FILES})
-    target_link_libraries(${StaticLibraryName} PRIVATE ${ARGN})
+    target_link_libraries(${StaticLibraryName} PUBLIC ${ARGN})
     target_include_directories(${StaticLibraryName} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/${RootPath}/inc/)
 endfunction()
