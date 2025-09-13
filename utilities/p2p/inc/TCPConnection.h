@@ -250,8 +250,8 @@ private:
                 }
 
                 std::unique_ptr<PackageIn<T>> packageIn = std::make_unique<PackageIn<T>>();
-                packageIn->Package = std::move(package);
-                packageIn->Connection = connection;
+                packageIn->package = std::move(package);
+                packageIn->connection = connection;
 
                 connection->m_inQueue.enqueue(inQueueToken, std::move(packageIn));
             }
