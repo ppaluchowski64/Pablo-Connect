@@ -40,13 +40,13 @@ jobs:
         run: conan install . --output-folder build --build=missing -s compiler.cppstd=20 -s build_type=Release
 
       - name: Configure CMake
-        run: cmake -B build -S . -G Ninja -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+        run: cmake --preset conan-default -B build -S . -G Ninja
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --preset conan-release
 
       - name: Run tests
-        working-directory: ./build
+        working-directory: ./build/Release
         run: |
           ./Asio_Abstractions_Test -C Release --output-on-failure
           ./Concurrent_Structures_Test -C Release --output-on-failure
