@@ -40,7 +40,7 @@ jobs:
         run: conan install . --output-folder build --build=missing -s compiler.cppstd=20 -s build_type=Release
 
       - name: Configure CMake
-        run: cmake --preset conan-default -B build -S . -G Ninja
+        run: cmake --preset conan-release -B build -S . -G Ninja
 
       - name: Build
         run: cmake --build build --preset conan-release
