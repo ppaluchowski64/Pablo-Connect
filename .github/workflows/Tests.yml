@@ -33,22 +33,18 @@ jobs:
 
       - name: Configure CMake (conan-release)
         if: runner.os != 'Windows'
-        working-directory: ./build
         run: cmake --preset conan-release
 
       - name: Configure CMake (conan-default)
         if: runner.os == 'Windows'
-        working-directory: ./build
         run: cmake --preset conan-default
 
       - name: Build (Linux/macOS)
         if: runner.os != 'Windows'
-        working-directory: ./build
         run: cmake --build --preset conan-release
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
-        working-directory: ./build
         run: cmake --build --preset conan-default --config Release
 
       - name: Tree
