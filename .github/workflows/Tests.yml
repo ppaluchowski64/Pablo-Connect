@@ -31,11 +31,25 @@ jobs:
       - name: Install Conan deps and generate presets
         run: conan install . --output-folder=build --build=missing -g CMakeToolchain -g CMakeDeps -s compiler.cppstd=20 -s build_type=Release --preset-name conan-release
 
-      - name: Configure CMake
+      - name: Configure CMake (conan-release)
+        if: runner.os != 'Windows'
+        working-directory: ./build
         run: cmake --preset conan-release
 
-      - name: Build
+      - name: Configure CMake (conan-default)
+        if: runner.os == 'Windows'
+        working-directory: ./build
+        run: cmake --preset conan-default
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        working-directory: ./build
         run: cmake --build --preset conan-release
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        working-directory: ./build
+        run: cmake --build --preset conan-default --config Release
 
       - name: Tree
         run: tree
