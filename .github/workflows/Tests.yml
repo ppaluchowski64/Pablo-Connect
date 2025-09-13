@@ -22,14 +22,6 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Install Ninja (MacOS)
-        if: runner.os == 'macOS'
-        run: brew install ninja
-
-      - name: Install Ninja (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
-
       - name: Install Conan
         uses: conan-io/setup-conan@v1
 
@@ -40,7 +32,7 @@ jobs:
         run: conan install . --output-folder build --build=missing -s compiler.cppstd=20 -s build_type=Release
 
       - name: Configure CMake
-        run: cmake --preset conan-release -B build -S . -G Ninja
+        run: cmake --preset conan-release -B build -S .
 
       - name: Build
         run: cmake --build build --preset conan-release
