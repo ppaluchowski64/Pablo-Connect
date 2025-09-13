@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <../../../../utilities/p2p/inc/Client.h>
+#include <Client.h>
 
 #include <thread>
 #include <future>
@@ -22,7 +22,7 @@ TEST(TLS_Test, DataTransferTest_SimplePackage) {
 
             client.AddHandler(P2P::MessageType::message, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
                 std::string value;
-                package->Package->GetValue(value);
+                package->package->GetValue(value);
                 ASSERT_EQ(std::string("echo test"), value);
                 ++clientMessageReceived;
             });
@@ -49,13 +49,13 @@ TEST(TLS_Test, DataTransferTest_SimplePackage) {
 
             server.AddHandler(P2P::MessageType::message, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
                 std::string value;
-                package->Package->GetValue(value);
+                package->package->GetValue(value);
                 ++serverMessageReceived;
             });
 
             server.AddHandler(P2P::MessageType::echo, [&](std::unique_ptr<PackageIn<P2P::MessageType>> package) {
                 std::string value;
-                package->Package->GetValue(value);
+                package->package->GetValue(value);
                 std::unique_ptr<Package<P2P::MessageType>> packageCopy = Package<P2P::MessageType>::CreateUnique(P2P::MessageType::message, std::move(value));
                 server.Send(std::move(packageCopy));
                 ++serverMessageReceived;

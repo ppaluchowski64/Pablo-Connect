@@ -27,20 +27,20 @@ public:
 
 template <PackageType T>
 struct PackageIn {
-    std::unique_ptr<Package<T>>          Package;
-    std::shared_ptr<ConnectionParent<T>> Connection;
+    std::unique_ptr<Package<T>>          package;
+    std::shared_ptr<ConnectionParent<T>> connection;
 
     PackageIn() noexcept
-        : Package(nullptr), Connection(nullptr) {}
+        : package(nullptr), connection(nullptr) {}
 
     PackageIn(PackageIn&& other) noexcept
-        : Package(std::move(other.Package)),
-          Connection(std::move(other.Connection)) {}
+        : package(std::move(other.package)),
+          connection(std::move(other.connection)) {}
 
     PackageIn& operator=(PackageIn&& other) noexcept {
         if (this != &other) {
-            Package = std::move(other.Package);
-            Connection = std::move(other.Connection);
+            package = std::move(other.package);
+            connection = std::move(other.connection);
         }
         return *this;
     }

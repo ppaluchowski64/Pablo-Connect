@@ -170,7 +170,7 @@ namespace P2P {
                 while (!m_destroyThreads) {
                      while (m_connection != nullptr && m_connection->GetConnectionState() == ConnectionState::CONNECTED) {
                         if (std::unique_ptr<PackageIn<MessageType>> package; m_packagesIn.try_dequeue(token, package)) {\
-                            m_handlers[package->Package->GetHeader().type](std::move(package));
+                            m_handlers[package->package->GetHeader().type](std::move(package));
                         }
 
                         if (m_packagesIn.size_approx() == 0) {

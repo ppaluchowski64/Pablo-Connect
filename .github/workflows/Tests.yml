@@ -1,0 +1,48 @@
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install Conan
+        uses: conan-io/setup-conan@v1
+
+      - name: Create default Conan profile
+        run: conan profile detect --force
+
+      - name: Install Conan deps and generate presets
+        run: conan install . --output-folder=build --build=missing -g CMakeToolchain -g CMakeDeps -s compiler.cppstd=20 -s build_type=Release
+
+      - name: Configure CMake (conan-release)
+        if: runner.os != 'Windows'
+        run: cmake --preset conan-release
+
+      - name: Configure CMake (conan-default)
+        if: runner.os == 'Windows'
+        run: cmake --preset conan-default
+
+      - name: Build
+        run: cmake --build --preset conan-release
+
+      - name: Run tests
+        working-directory: ./build/build/Release
+        run: |
+          ./Concurrent_Structures_Test -C Release --output-on-failure

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <../../../../utilities/p2p/inc/Client.h>
+#include <Client.h>
 
 static std::vector<std::future<void>> leaked_futures;
 
@@ -28,6 +28,7 @@ TEST(TLS_Test, ConnectionTest) {
         client1.Disconnect();
         client2.Disconnect();
     });
+
 
     if (future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {
         leaked_futures.emplace_back(std::move(future));
