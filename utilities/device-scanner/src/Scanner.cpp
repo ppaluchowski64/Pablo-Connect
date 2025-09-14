@@ -55,7 +55,7 @@ asio::awaitable<void> LanDeviceScanner::Co_JoinMulticastGroup() {
         s_instance->m_receiverSocket.set_option(asio::ip::multicast::enable_loopback(false));
 
         s_instance->m_senderSocket.open(asio::ip::udp::v4());
-        s_instance->m_senderSocket.set_option(asio::ip::multicast::hops(1));
+        s_instance->m_senderSocket.set_option(asio::ip::multicast::hops(99));
         s_instance->m_senderSocket.set_option(asio::ip::multicast::enable_loopback(false));
 
         s_instance->m_isScanning = true;
