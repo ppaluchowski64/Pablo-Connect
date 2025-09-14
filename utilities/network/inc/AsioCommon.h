@@ -11,6 +11,7 @@ typedef uint32_t PackageSizeInt;
 typedef uint16_t PackageTypeInt;
 
 typedef asio::io_context IOContext;
+typedef asio::executor_work_guard<asio::io_context::executor_type> IOWorkGuard;
 typedef asio::ssl::context SSLContext;
 typedef asio::ip::tcp::socket TCPSocket;
 typedef asio::ip::tcp::resolver TCPResolver;
@@ -29,8 +30,9 @@ constexpr PackageSizeInt MAX_FULL_PACKAGE_SIZE = 1024 * 64;
 constexpr PackageSizeInt MAX_FILE_NAME_SIZE = 255;
 constexpr PackageSizeInt FILE_BUFFER_SIZE = 128 * 1024;
 constexpr uint32_t PACKAGES_WARN_THRESHOLD = 10000;
-constexpr uint16_t SSL_CONNECTION_PORT = 50000;
-constexpr uint16_t SSL_FILE_STREAM_PORT = 50001;
+
+const asio::ip::address_v4 DEVICE_DISCOVERY_MULTICAST_ADDRESS = asio::ip::make_address_v4("239.255.123.242");
+constexpr uint16_t DEVICE_DISCOVERY_MULTICAST_PORT            = 5430;
 
 template <typename T>
 concept PackageType = std::is_same_v<std::underlying_type_t<T>, PackageTypeInt>;

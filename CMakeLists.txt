@@ -34,11 +34,10 @@ target_compile_definitions(project_defaults INTERFACE
 BuildStaticLibrary(network-component-pc utilities/network project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient concurrentqueue::concurrentqueue)
 BuildStaticLibrary(system-component-pc utilities/system project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient concurrentqueue::concurrentqueue )
 BuildStaticLibrary(p2p-component-pc utilities/p2p project_defaults openssl::openssl asio::asio Debug-Log Tracy::TracyClient network-component-pc system-component-pc concurrentqueue::concurrentqueue)
-
-
+BuildStaticLibrary(device-scanner-pc utilities/device-scanner project_defaults network-component-pc system-component-pc)
 
 if (ENABLE_TESTS)
-    BuildTestProgram(MultiCast_Test asio-abstractions-programs/MultiCast.cpp network-component-pc system-component-pc p2p-component-pc project_defaults)
+    BuildTestProgram(MultiCast_Test asio-abstractions-programs/MultiCast.cpp device-scanner-pc)
     BuildTests(Concurrent_Structures_Test concurrent-structures network-component-pc system-component-pc p2p-component-pc)
     BuildTests(Asio_Abstractions_Test asio-abstractions network-component-pc system-component-pc p2p-component-pc)
 endif()

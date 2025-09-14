@@ -70,7 +70,7 @@ namespace P2P {
         ClientMode  m_clientMode;
         bool m_destroyThreads{false};
 
-        asio::executor_work_guard<asio::io_context::executor_type> m_contextWorkGuard;
+        IOWorkGuard m_contextWorkGuard;
         std::vector<std::thread> m_threadPool;
 
         std::function<void(std::unique_ptr<PackageIn<MessageType>>)> m_handlers[static_cast<uint64_t>(MessageType::COUNT)] = {nullptr};

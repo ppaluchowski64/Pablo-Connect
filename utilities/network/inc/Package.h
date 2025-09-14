@@ -82,8 +82,6 @@ public:
     }
 
     Package& operator=(Package&& other) noexcept {
-        ZoneScoped;
-
         if (this != &other) {
             delete[] m_rawBody;
 
