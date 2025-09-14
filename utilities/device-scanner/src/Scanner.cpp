@@ -52,11 +52,11 @@ asio::awaitable<void> LanDeviceScanner::Co_JoinMulticastGroup() {
         s_instance->m_receiverSocket.set_option(asio::socket_base::reuse_address(true));
         s_instance->m_receiverSocket.bind(UDPEndpoint(asio::ip::udp::v4(), DEVICE_DISCOVERY_MULTICAST_PORT));
         s_instance->m_receiverSocket.set_option(asio::ip::multicast::join_group(DEVICE_DISCOVERY_MULTICAST_ADDRESS));
-        s_instance->m_receiverSocket.set_option(asio::ip::multicast::enable_loopback(false));
+        //s_instance->m_receiverSocket.set_option(asio::ip::multicast::enable_loopback(false));
 
         s_instance->m_senderSocket.open(asio::ip::udp::v4());
         s_instance->m_senderSocket.set_option(asio::ip::multicast::hops(99));
-        s_instance->m_senderSocket.set_option(asio::ip::multicast::enable_loopback(false));
+        //s_instance->m_senderSocket.set_option(asio::ip::multicast::enable_loopback(false));
 
         s_instance->m_isScanning = true;
         asio::co_spawn(s_instance->m_context, Co_SendProbes(), asio::detached);
