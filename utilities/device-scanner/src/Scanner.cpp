@@ -1,6 +1,7 @@
 #include <Scanner.h>
 #include <DebugLog.h>
 #include <Package.h>
+#include <tuple>
 
 LanDeviceScanner* LanDeviceScanner::s_instance{nullptr};
 
@@ -52,11 +53,11 @@ asio::awaitable<void> LanDeviceScanner::Co_JoinMulticastGroup() {
         s_instance->m_receiverSocket.set_option(asio::socket_base::reuse_address(true));
         s_instance->m_receiverSocket.bind(UDPEndpoint(asio::ip::udp::v4(), DEVICE_DISCOVERY_MULTICAST_PORT));
         s_instance->m_receiverSocket.set_option(asio::ip::multicast::join_group(DEVICE_DISCOVERY_MULTICAST_ADDRESS));
-        //s_instance->m_receiverSocket.set_option(asio::ip::multicast::enable_loopback(false));
+        s_instance->m_receiverSocket.set_option(asio::ip::multicast::enable_loopback(false));
 
         s_instance->m_senderSocket.open(asio::ip::udp::v4());
         s_instance->m_senderSocket.set_option(asio::ip::multicast::hops(99));
-        //s_instance->m_senderSocket.set_option(asio::ip::multicast::enable_loopback(false));
+        s_instance->m_senderSocket.set_option(asio::ip::multicast::enable_loopback(false));
 
         s_instance->m_isScanning = true;
         asio::co_spawn(s_instance->m_context, Co_SendProbes(), asio::detached);
@@ -90,16 +91,16 @@ asio::awaitable<void> LanDeviceScanner::Co_LeaveMulticastGroup() {
 
 asio::awaitable<void> LanDeviceScanner::Co_SendProbes() {
     try {
-        Package<DeviceScannerPackageType> package = Package<DeviceScannerPackageType>::Create(DeviceScannerPackageType::None);
-        const std::vector<asio::const_buffer> buffers = {
-            asio::const_buffer(&package.GetHeader(), sizeof(PackageHeader)),
-            asio::const_buffer(package.GetRawBody(), package.GetHeader().size)
-        };
+        const DeviceInfo device = {};
 
+        std::vector<uint8_t> buffer(sizeof(device));
+        std::memcpy(buffer.data(), &device, sizeof(device));
+
+        const asio::const_buffer constBuffer(buffer.data(), buffer.size());
         const UDPEndpoint multicastEndpoint(DEVICE_DISCOVERY_MULTICAST_ADDRESS, DEVICE_DISCOVERY_MULTICAST_PORT);
 
         do {
-            co_await s_instance->m_senderSocket.async_send_to(buffers, multicastEndpoint);
+            co_await s_instance->m_senderSocket.async_send_to(constBuffer, multicastEndpoint, asio::use_awaitable);
 
             asio::steady_timer timer(s_instance->m_context);
             timer.expires_after(std::chrono::seconds(1));
@@ -114,20 +115,21 @@ asio::awaitable<void> LanDeviceScanner::Co_SendProbes() {
 
 asio::awaitable<void> LanDeviceScanner::Co_ReceiveResponses() {
     try {
-        PackageHeader header{};
+        DeviceInfo device = {};
 
         do {
-            asio::mutable_buffer headerBuffer(&header, sizeof(PackageHeader));
+            asio::mutable_buffer buffer(&device, sizeof(device));
 
             UDPEndpoint senderEndpoint;
-            co_await s_instance->m_receiverSocket.async_receive_from(headerBuffer, senderEndpoint);
+            // IGNORE THIS ERROR
+            std::size_t bytesReceived = co_await s_instance->m_receiverSocket.async_receive_from(buffer, senderEndpoint, asio::use_awaitable);
 
-            Package<DeviceScannerPackageType> package(header);
+            if (bytesReceived != sizeof(device)) {
+                Debug::Log("Received a packet with incorrect size.");
+                continue;
+            }
 
-            asio::mutable_buffer packageBuffer(package.GetRawBody(), header.size);
-            co_await s_instance->m_receiverSocket.async_receive_from(packageBuffer, senderEndpoint);
-
-            Debug::Log("Received");
+            Debug::Log("Received from {}", senderEndpoint.address().to_string());
 
         } while (s_instance->m_isScanning);
 
