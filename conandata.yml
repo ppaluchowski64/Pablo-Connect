@@ -6,3 +6,7 @@ requirements:
   - "boost/1.87.0"
   - "openssl/3.5.0"
   - "asio/1.34.2"
+  - "gtest/1.17.0"
+  - "benchmark/1.9.4"
+  - "concurrentqueue/1.0.4"
+  - "fmt/11.2.0"

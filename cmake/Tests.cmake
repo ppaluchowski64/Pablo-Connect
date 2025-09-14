@@ -15,6 +15,7 @@ function(BuildTests ExecutableName PathInTestFolder)
     target_link_libraries(${ExecutableName} PRIVATE
             ${ARGN}
             gtest_main
+            GTest::gtest_main
     )
 
     gtest_discover_tests(${ExecutableName})
