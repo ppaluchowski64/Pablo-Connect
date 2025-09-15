@@ -1,6 +1,7 @@
-#ifndef SCANNER_H
-#define SCANNER_H
+#ifndef LAN_DEVICE_SCANNER_H
+#define LAN_DEVICE_SCANNER_H
 
+#include <asio.hpp>
 #include <asio/awaitable.hpp>
 #include <AsioCommon.h>
 #include <AwaitableFlag.h>
@@ -44,4 +45,4 @@ private:
     std::vector<DeviceInfo> m_discoveredDevices;
 };
 
-#endif //SCANNER_H
+#endif //LAN_DEVICE_SCANNER_H

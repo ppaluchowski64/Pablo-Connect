@@ -1,7 +1,7 @@
 #include <Scanner.h>
 #include <DebugLog.h>
 #include <Package.h>
-#include <tuple>
+#include <coroutine>
 
 LanDeviceScanner* LanDeviceScanner::s_instance{nullptr};
 
