@@ -37,7 +37,7 @@ BuildStaticLibrary(p2p-component-pc utilities/p2p project_defaults openssl::open
 BuildStaticLibrary(device-scanner-pc utilities/device-scanner project_defaults network-component-pc system-component-pc)
 
 if (ENABLE_TESTS)
-    BuildTestProgram(MultiCast_Test asio-abstractions-programs/MultiCast.cpp device-scanner-pc)
+    BuildTestProgram(MultiCast_Test asio-abstractions-programs/Multicast.cpp device-scanner-pc)
     BuildTests(Concurrent_Structures_Test concurrent-structures network-component-pc system-component-pc p2p-component-pc)
     BuildTests(Asio_Abstractions_Test asio-abstractions network-component-pc system-component-pc p2p-component-pc)
 endif()
